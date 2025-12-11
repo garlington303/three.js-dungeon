@@ -193,7 +193,7 @@ class TextureManager {
 
     try {
       // Load right hand texture
-      const handTex = await this.loader.loadAsync('src/assets/resources/Mage-hand.png');
+      const handTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand.png');
       configureTexture(handTex);
       this.textures.set('hand', handTex);
       console.log('Right hand texture loaded');
@@ -223,7 +223,7 @@ class TextureManager {
 
     try {
       // Load left hand texture (separate image, not mirrored)
-      const leftHandTex = await this.loader.loadAsync('src/assets/resources/Mage-hand-left2.png');
+      const leftHandTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand-left1.png');
       configureTexture(leftHandTex);
       this.textures.set('hand-left', leftHandTex);
       console.log('Left hand texture loaded');
