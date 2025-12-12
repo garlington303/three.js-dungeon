@@ -13,3 +13,4 @@ applyTo: '**'
 
 # Solutions Repository
 - Drag UI issues: ensure drag ghost never intercepts clicks (pointer-events: none) and end drags on global mouseup.
+- CSS positioning: when using transform for centering (e.g., translateX(-50%)), compose hover transforms via a CSS var (e.g., --equip-transform) so hover doesn’t override base alignment.
