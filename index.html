@@ -476,25 +476,13 @@
         transform: translate(-50%, -50%);
         width: 180px;
         height: 420px;
-        background: linear-gradient(180deg, rgba(150, 140, 120, 0.18) 0%, rgba(70, 60, 50, 0.12) 100%);
-        border-radius: 90px;
-        box-shadow:
-          0 0 60px rgba(0, 0, 0, 0.5),
-          inset 0 0 30px rgba(80, 60, 40, 0.08);
+        background-image: url('/src/assets/ui/paperdoll-ui.png');
+        background-size: contain;
+        background-repeat: no-repeat;
+        background-position: center;
+        image-rendering: pixelated;
+        box-shadow: 0 0 60px rgba(0, 0, 0, 0.5);
         z-index: 1;
-      }
-
-      #paperdoll-silhouette::before {
-        content: '';
-        position: absolute;
-        top: -40px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 60px;
-        height: 60px;
-        background: radial-gradient(circle, rgba(170, 160, 140, 0.22) 0%, rgba(90, 80, 70, 0.12) 100%);
-        border-radius: 50%;
-        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
       }
 
       /* Equipment Slot Base */
