@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import { InventoryManager } from './inventory';
+import { AnimatedSprite } from './animatedSprite';
 import { ItemPickupManager } from './itemPickups';
 import { DUNGEON_PICKUP_LAYOUT } from './pickupLayouts';
 
@@ -33,6 +34,11 @@ export const CONFIG = {
   PROJECTILE_SPEED: 12.0,
   PROJECTILE_LIFETIME: 5.0,
   PROJECTILE_DAMAGE: 25,
+
+  // Continuous right-click beam
+  BEAM_RANGE: 18.0,
+  BEAM_DAMAGE_PER_SECOND: 35,
+  BEAM_STEP: 0.25,
   
   // Enemies
   ENEMY_DETECTION_RANGE: 8.0,
@@ -85,12 +91,13 @@ export interface EnemyData {
   damageFlashTimer: number;
   deathTimer: number;
   attackCooldown: number;
+  // Optional animated sprite used for non-idle animations (attack, etc.)
+  anim?: any;
 }
 
 export interface ProjectileData {
   mesh: THREE.Mesh;
-  dirX: number;
-  dirY: number;
+  dir: THREE.Vector3;
   lifetime: number;
   hand: 'left' | 'right';
   damage: number;
@@ -153,7 +160,8 @@ export const gridToWorldCenter = (gridX: number, gridZ: number): { x: number; z:
 export const ENEMY_PRESETS = [
   { maxHealth: 50, speed: CONFIG.ENEMY_SPEED, name: 'Slime' },
   { maxHealth: 100, speed: CONFIG.ENEMY_SPEED * 0.7, name: 'Tank Slime' },
-  { maxHealth: 30, speed: CONFIG.ENEMY_SPEED * 1.5, name: 'Fast Slime' },
+  { maxHealth: 120, speed: CONFIG.ENEMY_SPEED * 0.6, name: 'Draugr', id: 'draugr' },
+  { maxHealth: 100, speed: CONFIG.ENEMY_SPEED * 0.8, name: 'Bandit Reaver', id: 'bandit' },
 ];
 
 // ============================================================================
@@ -200,31 +208,81 @@ class TextureManager {
     }
 
     try {
-<<<<<<< HEAD
+      // Draugr idle texture (single-frame PNG or spritesheet)
+      const draugrIdle = await this.loader.loadAsync('src/assets/enemies/draugr_idle.png');
+      configureTexture(draugrIdle);
+      this.textures.set('draugr_idle', draugrIdle);
+      console.log('Draugr idle texture loaded');
+    } catch (e) {
+      // Not critical - will fallback to slime
+    }
+
+    try {
+      // Draugr attack spritesheet (prefer PNG spritesheet with transparency)
+      const draugrAttack = await this.loader.loadAsync('src/assets/enemies/draugr_attack.png');
+      configureTexture(draugrAttack);
+      this.textures.set('draugr_attack', draugrAttack);
+      console.log('Draugr attack spritesheet loaded');
+    } catch (e) {
+      // GIFs are not reliably animated via TextureLoader; recommend pre-processing GIF -> spritesheet
+    }
+
+    try {
+      // Bandit Reaver idle texture
+      const banditIdle = await this.loader.loadAsync('src/assets/enemies/bandit-reaver.png');
+      configureTexture(banditIdle);
+      this.textures.set('bandit_idle', banditIdle);
+      console.log('Bandit idle texture loaded');
+    } catch (e) {
+      console.warn('Failed to load bandit idle texture', e);
+    }
+
+    try {
+      // Bandit attack spritesheet (4x4 grid = 16 frames)
+      const banditAttack = await this.loader.loadAsync('src/assets/enemies/bandit_attack.png');
+      configureTexture(banditAttack);
+      this.textures.set('bandit_attack', banditAttack);
+      console.log('Bandit attack spritesheet loaded');
+    } catch (e) {
+      console.warn('Failed to load bandit attack spritesheet', e);
+    }
+
+    try {
       // Load right hand viewmodel texture
       const rightHandTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand-right.png');
       configureTexture(rightHandTex);
       this.textures.set('hand-right', rightHandTex);
       console.log('Right hand viewmodel texture loaded');
-=======
-      // Load right hand texture
-      const handTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand.png');
-      configureTexture(handTex);
-      this.textures.set('hand', handTex);
-      console.log('Right hand texture loaded');
->>>>>>> fb3097ecf9974a161c83bb1265f04ca236e47bd8
     } catch (e) {
       console.warn('Failed to load right hand viewmodel texture', e);
     }
 
     try {
-<<<<<<< HEAD
+      // Load right-hand fireball animation frames (separate PNGs)
+      const frame0 = await this.loader.loadAsync('src/assets/resources/hands/hand_fireball_0.png');
+      configureTexture(frame0);
+      this.textures.set('hand-fireball-0', frame0);
+
+      const frame1 = await this.loader.loadAsync('src/assets/resources/hands/hand_fireball_1.png');
+      configureTexture(frame1);
+      this.textures.set('hand-fireball-1', frame1);
+
+      // Use the fireball-holding frame as the default right-hand viewmodel for smoother animation.
+      this.textures.set('hand-right', frame1);
+      console.log('Set hand-right to fireball-holding frame (frame1)');
+
+      const frame2 = await this.loader.loadAsync('src/assets/resources/hands/hand_fireball_2.png');
+      configureTexture(frame2);
+      this.textures.set('hand-fireball-2', frame2);
+
+      console.log('Hand fireball animation frames loaded');
+    } catch (e) {
+      console.warn('Failed to load hand fireball animation', e);
+    }
+
+    try {
       // Load left hand viewmodel texture (separate image, not mirrored)
       const leftHandTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand-left2.png');
-=======
-      // Load left hand texture (separate image, not mirrored)
-      const leftHandTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand-left1.png');
->>>>>>> fb3097ecf9974a161c83bb1265f04ca236e47bd8
       configureTexture(leftHandTex);
       this.textures.set('hand-left', leftHandTex);
       console.log('Left hand viewmodel texture loaded');
@@ -1544,7 +1602,145 @@ class EnemyManager {
       if (e.code === 'Digit1') this.spawnEnemy(0);
       if (e.code === 'Digit2') this.spawnEnemy(1);
       if (e.code === 'Digit3') this.spawnEnemy(2);
+      if (e.code === 'Digit4') this.spawnEnemy(3);
+      if (e.code === 'KeyP') {
+        // Debug: force all enemies to play their attack animation (if available)
+        this.triggerAttack();
+      }
     });
+  }
+
+  /**
+   * Force all enemies to play their attack animation (debug helper).
+   */
+  public triggerAttack(): void {
+    for (const enemy of this.enemies) {
+      if (enemy.state === 'defeated') continue;
+      if (enemy.anim) {
+        try {
+          enemy.mesh.visible = false;
+          enemy.anim.sprite.visible = true;
+          enemy.anim.play('attack');
+          enemy.attackCooldown = CONFIG.ENEMY_ATTACK_COOLDOWN + 0.8;
+        } catch (e) {
+          console.warn('Failed to trigger enemy attack animation', e);
+        }
+      }
+    }
+  }
+
+  spawnEnemyAt(id: string, pos: THREE.Vector3): void {
+    // Validate spawn cell
+    const mapX = Math.floor(pos.x);
+    const mapZ = Math.floor(pos.z);
+    if (mapX < 1 || mapX >= CONFIG.MAP_SIZE - 1 || mapZ < 1 || mapZ >= CONFIG.MAP_SIZE - 1) return;
+    if (WORLD_MAP[mapZ][mapX] !== 0) return;
+
+    if (id === 'draugr') {
+      // Use draugr attack texture for idle (showing first frame)
+      const attackTex = this.textures.get('draugr_attack');
+      if (!attackTex) {
+        console.warn('Draugr attack texture not loaded');
+        return;
+      }
+
+      // Create idle sprite using the attack spritesheet (frame 0)
+      const idleTex = attackTex.clone();
+      idleTex.needsUpdate = true;
+      idleTex.repeat.set(1/4, 1/4); // 4x4 grid, show one frame
+      idleTex.offset.set(0, 3/4); // Top-left frame (row 0, col 0, but UV is bottom-left origin)
+      
+      const material = new THREE.SpriteMaterial({ map: idleTex, transparent: true });
+      const sprite = new THREE.Sprite(material);
+      sprite.position.set(pos.x, 0.4, pos.z);
+      sprite.scale.set(1.0, 1.0, 1.0);
+      this.scene.add(sprite);
+
+      // Create attack animation sprite
+      let anim: AnimatedSprite | undefined;
+      try {
+        anim = new AnimatedSprite(attackTex, 4, 4);
+        anim.setAnimation('attack', 0, 15, 8, false); // 8 FPS for slower, more impactful attack
+        anim.sprite.position.set(pos.x, 0.4, pos.z);
+        anim.sprite.scale.set(1.2, 1.2, 1.2);
+        anim.sprite.visible = false;
+        this.scene.add(anim.sprite);
+      } catch (e) {
+        console.warn('Failed to create draugr attack animation', e);
+      }
+
+      const enemy: EnemyData = {
+        mesh: sprite,
+        x: pos.x,
+        y: pos.z,
+        health: 120,
+        maxHealth: 120,
+        state: 'idle',
+        speed: CONFIG.ENEMY_SPEED * 0.6,
+        detectionRange: CONFIG.ENEMY_DETECTION_RANGE,
+        damageFlashTimer: 0,
+        deathTimer: 0,
+        attackCooldown: 0,
+        anim: anim,
+      };
+
+      this.enemies.push(enemy);
+      console.log(`Spawned Draugr at (${pos.x.toFixed(1)}, ${pos.z.toFixed(1)})`);
+      return;
+    }
+
+    if (id === 'bandit') {
+      // Use bandit attack texture for animations
+      const attackTex = this.textures.get('bandit_attack');
+      const idleTexSrc = this.textures.get('bandit_idle');
+      
+      if (!attackTex || !idleTexSrc) {
+        console.warn('Bandit textures not loaded');
+        return;
+      }
+
+      // Create idle sprite using the standalone idle texture
+      const material = new THREE.SpriteMaterial({ map: idleTexSrc, transparent: true });
+      const sprite = new THREE.Sprite(material);
+      sprite.position.set(pos.x, 0.4, pos.z);
+      sprite.scale.set(1.0, 1.0, 1.0);
+      this.scene.add(sprite);
+
+      // Create attack animation sprite (4x4 grid = 16 frames)
+      let anim: AnimatedSprite | undefined;
+      try {
+        anim = new AnimatedSprite(attackTex, 4, 4);
+        anim.setAnimation('attack', 0, 15, 10, false); // 10 FPS for attack animation
+        anim.sprite.position.set(pos.x, 0.4, pos.z);
+        anim.sprite.scale.set(1.2, 1.2, 1.2);
+        anim.sprite.visible = false;
+        this.scene.add(anim.sprite);
+      } catch (e) {
+        console.warn('Failed to create bandit attack animation', e);
+      }
+
+      const enemy: EnemyData = {
+        mesh: sprite,
+        x: pos.x,
+        y: pos.z,
+        health: 100,
+        maxHealth: 100,
+        state: 'idle',
+        speed: CONFIG.ENEMY_SPEED * 0.8,
+        detectionRange: CONFIG.ENEMY_DETECTION_RANGE,
+        damageFlashTimer: 0,
+        deathTimer: 0,
+        attackCooldown: 0,
+        anim: anim,
+      };
+
+      this.enemies.push(enemy);
+      console.log(`Spawned Bandit Reaver at (${pos.x.toFixed(1)}, ${pos.z.toFixed(1)})`);
+      return;
+    }
+
+    // Unknown enemy ID
+    console.warn(`Unknown enemy ID: ${id}`);
   }
 
   spawnEnemy(presetIndex: number): void {
@@ -1564,6 +1760,13 @@ class EnemyManager {
     const mapZ = Math.floor(spawnZ);
     if (mapX < 1 || mapX >= CONFIG.MAP_SIZE - 1 || mapZ < 1 || mapZ >= CONFIG.MAP_SIZE - 1) return;
     if (WORLD_MAP[mapZ][mapX] !== 0) return;
+
+    // If this preset has a special ID (like 'draugr'), use spawnEnemyAt
+    if ((preset as any).id) {
+      const spawnPos = new THREE.Vector3(spawnX, 0, spawnZ);
+      this.spawnEnemyAt((preset as any).id, spawnPos);
+      return;
+    }
 
     // Create sprite for enemy
     const slimeTexture = this.textures.get('slime');
@@ -1635,8 +1838,21 @@ class EnemyManager {
         
         // Attack player if close enough
         if (dist < 0.8 && enemy.attackCooldown <= 0 && this.player) {
-          this.player.takeDamage(CONFIG.ENEMY_ATTACK_DAMAGE);
-          enemy.attackCooldown = CONFIG.ENEMY_ATTACK_COOLDOWN;
+            // Apply damage to player
+            this.player.takeDamage(CONFIG.ENEMY_ATTACK_DAMAGE);
+
+            // If the enemy has an attack animation, play it and hide the idle sprite
+            if (enemy.anim) {
+              enemy.mesh.visible = false;
+              enemy.anim.sprite.visible = true;
+              // Stop and restart the animation to ensure clean replay
+              enemy.anim.stop();
+              enemy.anim.play('attack');
+              // Add a small buffer to cooldown to cover the animation (16 frames @ 8fps = 2s)
+              enemy.attackCooldown = CONFIG.ENEMY_ATTACK_COOLDOWN + 2.0;
+            } else {
+              enemy.attackCooldown = CONFIG.ENEMY_ATTACK_COOLDOWN;
+            }
         }
         
         // Move toward player
@@ -1661,6 +1877,15 @@ class EnemyManager {
 
       // Update mesh position
       enemy.mesh.position.set(enemy.x, 0.4, enemy.y);
+      // If there's an attached anim sprite, sync its position and update playback
+      if (enemy.anim) {
+        enemy.anim.sprite.position.set(enemy.x, 0.4, enemy.y);
+        enemy.anim.update(dt);
+        if (!enemy.anim.isPlaying() && enemy.anim.sprite.visible) {
+          enemy.anim.sprite.visible = false;
+          enemy.mesh.visible = true;
+        }
+      }
     }
   }
 
@@ -1712,15 +1937,12 @@ class ProjectileManager {
     const material = new THREE.MeshBasicMaterial({ color });
     const mesh = new THREE.Mesh(geometry, material);
 
-    // Offset to the side based on hand
-    const right = new THREE.Vector3(1, 0, 0);
-    right.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 0, -1), direction
-    ));
-    
-    const offset = hand === 'left' ? -0.3 : 0.3;
-    mesh.position.copy(position).add(right.multiplyScalar(offset));
-    mesh.position.y -= 0.1;
+    const dir = direction.clone();
+    if (dir.lengthSq() > 0) dir.normalize();
+    else dir.set(0, 0, -1);
+
+    // Position is already offset by the caller (camera + hand offset)
+    mesh.position.copy(position);
 
     // Add glow effect
     const glowGeometry = new THREE.SphereGeometry(0.15, 8, 8);
@@ -1740,8 +1962,7 @@ class ProjectileManager {
 
     this.projectiles.push({
       mesh,
-      dirX: direction.x,
-      dirY: direction.z,
+      dir,
       lifetime: CONFIG.PROJECTILE_LIFETIME,
       hand,
       damage,
@@ -1753,8 +1974,14 @@ class ProjectileManager {
       const proj = this.projectiles[i];
 
       // Move projectile
-      proj.mesh.position.x += proj.dirX * CONFIG.PROJECTILE_SPEED * dt;
-      proj.mesh.position.z += proj.dirY * CONFIG.PROJECTILE_SPEED * dt;
+      proj.mesh.position.addScaledVector(proj.dir, CONFIG.PROJECTILE_SPEED * dt);
+
+      // Ground/floor cull (prevents shots aimed downward from flying forever)
+      if (proj.mesh.position.y <= 0.05) {
+        this.scene.remove(proj.mesh);
+        this.projectiles.splice(i, 1);
+        continue;
+      }
 
       // Check wall collision
       const mapX = Math.floor(proj.mesh.position.x);
@@ -1792,12 +2019,150 @@ class ProjectileManager {
 }
 
 // ============================================================================
+// BEAM MANAGER (continuous right-click)
+// ============================================================================
+
+class BeamManager {
+  private scene: THREE.Scene;
+  private enemyManager: EnemyManager;
+  private active = false;
+  private line: THREE.Line;
+  private glow: THREE.Line;
+  private start = new THREE.Vector3();
+  private end = new THREE.Vector3();
+  private tmp = new THREE.Vector3();
+
+  constructor(scene: THREE.Scene, enemyManager: EnemyManager) {
+    this.scene = scene;
+    this.enemyManager = enemyManager;
+
+    const geom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const mat = new THREE.LineBasicMaterial({ color: 0xff8844, transparent: true, opacity: 0.85 });
+    this.line = new THREE.Line(geom, mat);
+    this.line.frustumCulled = false;
+    this.line.renderOrder = 900;
+
+    const glowGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const glowMat = new THREE.LineBasicMaterial({ color: 0xffaa55, transparent: true, opacity: 0.35 });
+    this.glow = new THREE.Line(glowGeom, glowMat);
+    this.glow.frustumCulled = false;
+    this.glow.renderOrder = 899;
+
+    this.setVisible(false);
+    this.scene.add(this.glow);
+    this.scene.add(this.line);
+  }
+
+  attachToScene(scene: THREE.Scene): void {
+    if (this.scene === scene) return;
+    this.scene.remove(this.line);
+    this.scene.remove(this.glow);
+    this.scene = scene;
+    this.scene.add(this.glow);
+    this.scene.add(this.line);
+  }
+
+  startBeam(): void {
+    this.active = true;
+    this.setVisible(true);
+  }
+
+  stopBeam(): void {
+    this.active = false;
+    this.setVisible(false);
+  }
+
+  getIsActive(): boolean {
+    return this.active;
+  }
+
+  update(dt: number, camera: THREE.PerspectiveCamera, sceneType: SceneType): void {
+    if (!this.active) return;
+
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    if (dir.lengthSq() > 0) dir.normalize();
+    else dir.set(0, 0, -1);
+
+    // Origin near right hand
+    camera.getWorldPosition(this.start);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+    this.start.addScaledVector(right, 0.25);
+    this.start.addScaledVector(dir, 0.35);
+    this.start.y -= 0.12;
+
+    const distance = this.castBeam(dt, this.start, dir, sceneType);
+    this.end.copy(this.start).addScaledVector(dir, distance);
+
+    this.updateLineGeometry(this.glow.geometry as THREE.BufferGeometry, this.start, this.end);
+    this.updateLineGeometry(this.line.geometry as THREE.BufferGeometry, this.start, this.end);
+  }
+
+  private castBeam(dt: number, origin: THREE.Vector3, dir: THREE.Vector3, sceneType: SceneType): number {
+    const maxRange = CONFIG.BEAM_RANGE;
+    const step = CONFIG.BEAM_STEP;
+    const dps = CONFIG.BEAM_DAMAGE_PER_SECOND;
+
+    for (let t = step; t <= maxRange; t += step) {
+      this.tmp.copy(origin).addScaledVector(dir, t);
+
+      // Floor/ground cull
+      if (this.tmp.y <= 0.05) return t;
+
+      // Stop at walls/blocked cells
+      if (this.isBlocked(this.tmp.x, this.tmp.z, sceneType)) return t;
+
+      // Damage enemies only in dungeon
+      if (sceneType === 'dungeon') {
+        const hit = this.enemyManager.damageEnemyAt(this.tmp.x, this.tmp.z, dps * dt);
+        if (hit) return t;
+      }
+    }
+
+    return maxRange;
+  }
+
+  private isBlocked(x: number, z: number, sceneType: SceneType): boolean {
+    if (sceneType === 'dungeon') {
+      const mapX = Math.floor(x);
+      const mapZ = Math.floor(z);
+      if (mapX < 0 || mapX >= CONFIG.MAP_SIZE || mapZ < 0 || mapZ >= CONFIG.MAP_SIZE) return true;
+      const cell = DUNGEON_MAP[mapZ]?.[mapX];
+      return cell === undefined ? true : (cell > 0 && cell !== 4);
+    }
+
+    const mapX = Math.floor(x);
+    const mapZ = Math.floor(z);
+    const size = DUNGEON2_CONFIG.MAP_SIZE;
+    if (mapX < 0 || mapX >= size || mapZ < 0 || mapZ >= size) return true;
+    const cell = DUNGEON2_MAP[mapZ]?.[mapX];
+    return cell === undefined ? true : (cell > 0 && cell !== 4);
+  }
+
+  private setVisible(visible: boolean): void {
+    this.line.visible = visible;
+    this.glow.visible = visible;
+  }
+
+  private updateLineGeometry(geometry: THREE.BufferGeometry, a: THREE.Vector3, b: THREE.Vector3): void {
+    const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
+    pos.setXYZ(0, a.x, a.y, a.z);
+    pos.setXYZ(1, b.x, b.y, b.z);
+    pos.needsUpdate = true;
+  }
+}
+
+// ============================================================================
 // HUD MANAGER
 // ============================================================================
 
 class HUDManager {
   private rightHandSprite: THREE.Sprite | null = null;
   private leftHandSprite: THREE.Sprite | null = null;
+  private rightHandFireballFrames: THREE.Texture[] = [];
+  private rightHandFireballFrameIndex = -1;
+  private rightHandFireballAnimTimer = 0;
+  private rightHandFireballAnimDuration = 1.2;
   private camera: THREE.Camera;
   private textures: TextureManager;
   private leftCastTimer = 0;
@@ -1830,6 +2195,7 @@ class HUDManager {
     this.createHeartSprites();
 
     // Create hand sprites if textures available
+    this.setupFireballFrames();
     this.updateRightHandTexture();
     
     const leftHandTexture = textures.get('hand-left');
@@ -1866,7 +2232,11 @@ class HUDManager {
     const textureName = this.availableHands[this.currentHandIndex];
     const texture = this.textures.get(textureName);
 
-    if (!texture) return;
+    if (!texture) {
+      console.warn('Right hand texture not found:', textureName);
+      return;
+    }
+    console.log('Updating right hand texture:', textureName, 'sprite exists:', !!this.rightHandSprite);
 
     // Prevent edge bleeding artifacts
     texture.wrapS = THREE.ClampToEdgeWrapping;
@@ -1888,6 +2258,42 @@ class HUDManager {
       this.rightHandSprite.material.map = texture;
       this.rightHandSprite.material.needsUpdate = true;
     }
+  }
+
+  private setupFireballFrames(): void {
+    const frame0 = this.textures.get('hand-fireball-0');
+    const frame1 = this.textures.get('hand-fireball-1');
+    const frame2 = this.textures.get('hand-fireball-2');
+
+    // Order: hold -> throw -> open (then restores to idle right hand)
+    const frames = [frame1, frame2, frame0].filter((t): t is THREE.Texture => Boolean(t));
+    if (frames.length !== 3) return;
+
+    // Prevent edge bleeding artifacts
+    for (const tex of frames) {
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.premultiplyAlpha = false;
+    }
+
+    this.rightHandFireballFrames = frames;
+    console.log('Fireball hand frames ready', {
+      frame0: !!frame0,
+      frame1: !!frame1,
+      frame2: !!frame2,
+      rightHandTexture: !!this.textures.get('hand-right')
+    });
+  }
+
+  public getRightHandThrowDelaySeconds(): number {
+    // We spawn the projectile at the start of the "throw" frame (index 1), which begins at 1/3 progress.
+    return this.rightHandFireballAnimDuration / 3;
+  }
+
+  private setRightHandTexture(texture: THREE.Texture): void {
+    if (!this.rightHandSprite) return;
+    this.rightHandSprite.material.map = texture;
+    this.rightHandSprite.material.needsUpdate = true;
   }
 
   public cycleHand(direction: number): void {
@@ -2043,6 +2449,8 @@ class HUDManager {
       this.leftCastTimer = this.castDuration;
     } else {
       this.rightCastTimer = this.castDuration;
+      this.rightHandFireballFrameIndex = -1;
+      this.rightHandFireballAnimTimer = this.rightHandFireballAnimDuration;
     }
   }
 
@@ -2055,6 +2463,25 @@ class HUDManager {
     if (this.rightCastTimer > 0) {
       this.rightCastTimer -= dt;
       if (this.rightCastTimer < 0) this.rightCastTimer = 0;
+    }
+
+    // Update right-hand fireball texture swap animation
+    if (this.rightHandSprite && this.rightHandFireballFrames.length === 3) {
+      if (this.rightHandFireballAnimTimer > 0) {
+        this.rightHandFireballAnimTimer -= dt;
+        if (this.rightHandFireballAnimTimer < 0) this.rightHandFireballAnimTimer = 0;
+
+        const progress = 1 - this.rightHandFireballAnimTimer / this.rightHandFireballAnimDuration; // 0..1
+        const idx = Math.max(0, Math.min(2, Math.floor(progress * 3)));
+        if (idx !== this.rightHandFireballFrameIndex) {
+          this.rightHandFireballFrameIndex = idx;
+          this.setRightHandTexture(this.rightHandFireballFrames[idx]);
+        }
+      } else if (this.rightHandFireballFrameIndex !== -1) {
+        // Restore to the selected idle/right-hand texture when cast finishes
+        this.rightHandFireballFrameIndex = -1;
+        this.updateRightHandTexture();
+      }
     }
 
     // Update bob phase
@@ -2125,6 +2552,14 @@ export class Game {
   private currentScene: SceneType = 'dungeon';
   private isPaused = false;
 
+  private pendingProjectiles: Array<{
+    timeLeft: number;
+    spawn: THREE.Vector3;
+    dir: THREE.Vector3;
+    hand: 'left' | 'right';
+    damage: number;
+  }> = [];
+
   constructor() {
     console.log('Game constructor started');
     
@@ -2165,15 +2600,17 @@ export class Game {
     this.scene.add(this.player.camera);
     console.log('Player created at', this.player.position);
 
-    // Setup mouse click for firing
+    // Setup mouse for firing
     document.addEventListener('mousedown', (e) => {
       if (this.isPaused) return;
       if (!this.player.isActive()) return;
       
       if (e.button === 0) {
-        this.fireProjectile('left');
+        this.queueProjectile('left', 0);
       } else if (e.button === 2) {
-        this.fireProjectile('right');
+        // Right click fires a projectile (aligned with the hand animation)
+        const delay = this.hudManager?.getRightHandThrowDelaySeconds?.() ?? 0;
+        this.queueProjectile('right', delay);
       }
     });
 
@@ -2342,6 +2779,9 @@ export class Game {
     const newScene = targetScene === 'dungeon' ? this.scene : this.dungeon2Scene;
     newScene.add(this.player.camera);
 
+    // Clear any queued shots when transitioning scenes
+    this.pendingProjectiles.length = 0;
+
     // Teleport player to appropriate spawn point
     if (targetScene === 'dungeon2') {
       // Spawn near the door in dungeon2, facing north (into the room)
@@ -2358,10 +2798,44 @@ export class Game {
     console.log(`Now in ${targetScene} scene`);
   }
 
-  private fireProjectile(hand: 'left' | 'right'): void {
-    const dir = this.player.getDirection();
-    this.projectileManager.fire(this.player.position.clone(), dir, hand, this.player.getAttack());
-    this.hudManager.triggerCast(hand);
+  private queueProjectile(hand: 'left' | 'right', delaySeconds: number): void {
+    // Projectiles are currently managed/rendered for the dungeon scene.
+    if (this.currentScene !== 'dungeon') return;
+
+    // Fire in the direction the player is looking (camera forward)
+    const dir = new THREE.Vector3();
+    this.player.camera.getWorldDirection(dir);
+    if (dir.lengthSq() > 0) dir.normalize();
+
+    // Spawn slightly in front of the camera, offset left/right for the hand
+    const spawn = new THREE.Vector3();
+    this.player.camera.getWorldPosition(spawn);
+
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.player.camera.quaternion).normalize();
+    const handOffset = hand === 'left' ? -0.25 : 0.25;
+    spawn.addScaledVector(right, handOffset);
+    spawn.addScaledVector(dir, 0.35);
+    spawn.y -= 0.12;
+
+    const damage = this.player.getAttack();
+    this.hudManager?.triggerCast(hand);
+
+    if (delaySeconds <= 0) {
+      this.projectileManager.fire(spawn, dir, hand, damage);
+      return;
+    }
+
+    this.pendingProjectiles.push({ timeLeft: delaySeconds, spawn, dir, hand, damage });
+  }
+
+  private updatePendingProjectiles(dt: number): void {
+    for (let i = this.pendingProjectiles.length - 1; i >= 0; i--) {
+      const shot = this.pendingProjectiles[i];
+      shot.timeLeft -= dt;
+      if (shot.timeLeft > 0) continue;
+      this.projectileManager.fire(shot.spawn, shot.dir, shot.hand, shot.damage);
+      this.pendingProjectiles.splice(i, 1);
+    }
   }
 
   private animate = (): void => {
@@ -2377,6 +2851,7 @@ export class Game {
 
       // Only update dungeon-specific managers when in dungeon
       if (this.currentScene === 'dungeon') {
+        this.updatePendingProjectiles(dt);
         this.enemyManager?.update(dt, this.player?.position);
         this.projectileManager?.update(dt);
         this.coinManager?.update(dt, this.player?.position);

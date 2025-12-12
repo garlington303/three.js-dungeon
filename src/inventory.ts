@@ -3,17 +3,9 @@ export type ItemType = 'weapon' | 'armor' | 'consumable' | 'key' | 'misc';
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type EquipmentSlot =
   | 'head'
-  | 'face'
-  | 'neck'
   | 'torso'
-  | 'back'
-  | 'leftArm'
-  | 'rightArm'
-  | 'belt'
   | 'legs'
-  | 'feet'
-  | 'ringLeft'
-  | 'ringRight';
+  | 'feet';
 
 // Item-side equip slots. Rings can be equipped into either ring slot.
 export type ItemEquipSlot = Exclude<EquipmentSlot, 'ringLeft' | 'ringRight'> | 'ring';
@@ -59,11 +51,19 @@ export interface InventoryCallbacks {
 }
 
 const RARITY_COLOR: Record<Rarity, string> = {
-  common: '#ffffff',
+  common: '#9a9a9a',
   uncommon: '#44ff88',
   rare: '#4488ff',
   epic: '#bb66ff',
   legendary: '#ff8844',
+};
+
+const RARITY_GLOW: Record<Rarity, string> = {
+  common: 'rgba(150, 150, 150, 0.3)',
+  uncommon: 'rgba(68, 255, 136, 0.5)',
+  rare: 'rgba(68, 136, 255, 0.5)',
+  epic: 'rgba(187, 102, 255, 0.6)',
+  legendary: 'rgba(255, 136, 68, 0.7)',
 };
 
 function svgIcon(label: string, bg: string): string {
@@ -98,7 +98,6 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     maxStack: 1,
     description: 'It has seen better days.',
     damage: 15,
-    equipSlot: 'rightArm',
   },
   pants_tattered: {
     id: 'pants_tattered',
@@ -124,17 +123,6 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     defense: 1,
     equipSlot: 'feet',
   },
-  backpack_small: {
-    id: 'backpack_small',
-    name: 'Small Backpack',
-    type: 'misc',
-    rarity: 'common',
-    icon: svgIcon('BP', '#3b2f26'),
-    stackable: false,
-    maxStack: 1,
-    description: 'Adds storage (capacity bonus not implemented yet).',
-    equipSlot: 'back',
-  },
   torch: {
     id: 'torch',
     name: 'Torch',
@@ -157,7 +145,6 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     maxStack: 1,
     description: 'A basic but reliable blade.',
     damage: 25,
-    equipSlot: 'rightArm',
   },
   axe_basic: {
     id: 'axe_basic',
@@ -169,7 +156,6 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     maxStack: 1,
     description: 'Heavy swings, heavy hits.',
     damage: 35,
-    equipSlot: 'rightArm',
   },
   crossbow_basic: {
     id: 'crossbow_basic',
@@ -181,7 +167,6 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     maxStack: 1,
     description: 'A ranged weapon for cautious heroes.',
     damage: 30,
-    equipSlot: 'rightArm',
   },
 
   // Armor
@@ -314,7 +299,6 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     stackable: false,
     maxStack: 1,
     description: 'An accessory (placeholder).',
-    equipSlot: 'ring',
   },
   quest_relic: {
     id: 'quest_relic',
@@ -325,6 +309,55 @@ export const ITEM_DB: Record<string, ItemTemplate> = {
     stackable: false,
     maxStack: 1,
     description: 'A quest item (placeholder).',
+  },
+
+  // Epic/Legendary gear for visual showcase
+  helm_dragon: {
+    id: 'helm_dragon',
+    name: 'Dragonbone Helm',
+    type: 'armor',
+    rarity: 'epic',
+    icon: svgIcon('DH', '#6a4488'),
+    stackable: false,
+    maxStack: 1,
+    description: 'Forged from the skull of an ancient wyrm.',
+    defense: 12,
+    equipSlot: 'head',
+  },
+  boots_shadow: {
+    id: 'boots_shadow',
+    name: 'Shadowstep Boots',
+    type: 'armor',
+    rarity: 'legendary',
+    icon: svgIcon('SB', '#cc6622'),
+    stackable: false,
+    maxStack: 1,
+    description: 'Move like a whisper through the dark.',
+    defense: 8,
+    equipSlot: 'feet',
+  },
+  sword_flame: {
+    id: 'sword_flame',
+    name: 'Inferno Blade',
+    type: 'weapon',
+    rarity: 'legendary',
+    icon: svgIcon('IB', '#dd5511'),
+    stackable: false,
+    maxStack: 1,
+    description: 'Burns with eternal flame.',
+    damage: 65,
+  },
+  potion_greater: {
+    id: 'potion_greater',
+    name: 'Greater Health Potion',
+    type: 'consumable',
+    rarity: 'rare',
+    icon: svgIcon('G+', '#cc3344'),
+    stackable: true,
+    maxStack: 10,
+    description: 'Restores 150 HP.',
+    effect: 'Heal 150',
+    healAmount: 150,
   },
 };
 
@@ -370,22 +403,14 @@ class SimpleSound {
 }
 
 export class InventoryManager {
-  private readonly slotCount = 48;
+  private readonly slotCount = 24;
   private slots: Array<ItemStack | null> = new Array(this.slotCount).fill(null);
   private hotbar: Array<ItemStack | null> = new Array(6).fill(null);
   private equipment: Record<EquipmentSlot, ItemStack | null> = {
     head: null,
-    face: null,
-    neck: null,
     torso: null,
-    back: null,
-    leftArm: null,
-    rightArm: null,
-    belt: null,
     legs: null,
     feet: null,
-    ringLeft: null,
-    ringRight: null,
   };
 
   private isOpen = false;
@@ -415,7 +440,6 @@ export class InventoryManager {
   private confirmYesBtn: HTMLButtonElement;
   private confirmNoBtn: HTMLButtonElement;
 
-  private statNameEl: HTMLElement;
   private statHpEl: HTMLElement;
   private statAtkEl: HTMLElement;
   private statDefEl: HTMLElement;
@@ -452,7 +476,6 @@ export class InventoryManager {
     this.confirmYesBtn = this.mustGet('inv-confirm-yes') as HTMLButtonElement;
     this.confirmNoBtn = this.mustGet('inv-confirm-no') as HTMLButtonElement;
 
-    this.statNameEl = this.mustGet('stat-name');
     this.statHpEl = this.mustGet('stat-hp');
     this.statAtkEl = this.mustGet('stat-attack');
     this.statDefEl = this.mustGet('stat-defense');
@@ -492,20 +515,35 @@ export class InventoryManager {
   }
 
   public setStartingItems(): void {
-    // Starting loadout (MVP; capacity/weight effects are added later)
+    // Starting loadout - 4 equipment slots
     this.equipDirect({ item: ITEM_DB.tunic_worn, quantity: 1 }, 'torso');
-    this.equipDirect({ item: ITEM_DB.sword_rusty, quantity: 1 }, 'rightArm');
     this.equipDirect({ item: ITEM_DB.pants_tattered, quantity: 1 }, 'legs');
     this.equipDirect({ item: ITEM_DB.boots_old, quantity: 1 }, 'feet');
-    this.equipDirect({ item: ITEM_DB.backpack_small, quantity: 1 }, 'back');
 
-    // Hotbar starters (activation via number keys is added in a later phase)
-    this.hotbar[0] = { item: ITEM_DB.potion_health, quantity: 1 };
-    this.hotbar[1] = { item: ITEM_DB.potion_health, quantity: 1 };
-    this.hotbar[2] = { item: ITEM_DB.potion_health, quantity: 1 };
-    this.hotbar[3] = { item: ITEM_DB.torch, quantity: 1 };
+    // Hotbar starters
+    this.hotbar[0] = { item: ITEM_DB.potion_health, quantity: 3 };
+    this.hotbar[1] = { item: ITEM_DB.potion_greater, quantity: 1 };
+    this.hotbar[2] = { item: ITEM_DB.torch, quantity: 5 };
 
-    this.tryAddById('gold_coin', 20);
+    // Add varied rarity items silently (no toast spam)
+    const starterItems = [
+      { id: 'gold_coin', qty: 50 },
+      { id: 'sword_basic', qty: 1 },
+      { id: 'axe_basic', qty: 1 },
+      { id: 'crossbow_basic', qty: 1 },
+      { id: 'helm_dragon', qty: 1 },
+      { id: 'boots_shadow', qty: 1 },
+      { id: 'sword_flame', qty: 1 },
+      { id: 'ring_ember', qty: 1 },
+      { id: 'quest_relic', qty: 1 },
+      { id: 'key_red', qty: 1 },
+      { id: 'armor_chain', qty: 1 },
+    ];
+    for (const { id, qty } of starterItems) {
+      const tpl = ITEM_DB[id];
+      if (tpl) this.tryAddStack({ item: tpl, quantity: qty });
+    }
+
     this.toast('Starting gear equipped.');
   }
 
@@ -609,6 +647,7 @@ export class InventoryManager {
   }
 
   private buildGridDom(): void {
+    // Build inventory grid
     this.gridEl.innerHTML = '';
     for (let i = 0; i < this.slotCount; i++) {
       const slot = document.createElement('div');
@@ -620,6 +659,13 @@ export class InventoryManager {
   }
 
   private bindEvents(): void {
+    // Optional close button in the inventory header.
+    const closeBtn = document.getElementById('inv-close-btn');
+    closeBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.isOpen) this.close();
+    });
+
     window.addEventListener('keydown', (e) => {
       const key = e.key.toLowerCase();
       if (key === 'i' || e.key === 'Tab') {
@@ -699,6 +745,13 @@ export class InventoryManager {
         this.updateGhost(e.clientX, e.clientY);
         this.hideTooltip();
       } else if (this.isOpen) {
+        // Check if mouse is over tooltip - if so, just update position
+        const target = e.target as HTMLElement | null;
+        if (target && this.tooltipEl.contains(target)) {
+          // Mouse is over tooltip, keep it visible but don't reposition
+          // (tooltip stays in place so buttons remain under cursor)
+          return;
+        }
         this.handleHover(e);
       }
     });
@@ -781,8 +834,17 @@ export class InventoryManager {
     const nodes = this.gridEl.querySelectorAll<HTMLElement>('.inv-slot');
     nodes.forEach((slotEl, i) => {
       slotEl.innerHTML = '';
+      // Clear rarity classes
+      slotEl.classList.remove('rarity-common', 'rarity-uncommon', 'rarity-rare', 'rarity-epic', 'rarity-legendary');
+      // Mark drag origin
+      const isDragOrigin = this.dragging?.from.kind === 'inv' && this.dragging.from.index === i;
+      slotEl.classList.toggle('drag-origin', isDragOrigin);
+
       const stack = this.slots[i];
       if (!stack) return;
+
+      // Add rarity class
+      slotEl.classList.add(`rarity-${stack.item.rarity}`);
 
       const img = document.createElement('img');
       img.className = 'inv-item';
@@ -807,17 +869,44 @@ export class InventoryManager {
       const stack = this.equipment[slot];
       el.classList.toggle('equipped', !!stack);
 
-      // Keep hint, but add/remove icon
-      const hint = el.querySelector('.equip-hint');
-      el.innerHTML = '';
-      if (hint) el.appendChild(hint);
+      // Clear rarity classes
+      el.classList.remove('rarity-common', 'rarity-uncommon', 'rarity-rare', 'rarity-epic', 'rarity-legendary');
 
-      if (stack) {
-        const img = document.createElement('img');
-        img.className = 'inv-item';
-        img.src = stack.item.icon;
-        img.alt = stack.item.name;
-        el.appendChild(img);
+      // Add drag-compatible highlight when dragging an equippable item
+      let isCompatible = false;
+      if (this.dragging) {
+        isCompatible = this.canEquipTo(this.dragging.stack, slot);
+      }
+      el.classList.toggle('drag-compatible', isCompatible);
+
+      // Find the content container (new structure)
+      const contentEl = el.querySelector('.equip-slot-content');
+      if (contentEl) {
+        contentEl.innerHTML = '';
+        if (stack) {
+          // Add rarity class to slot
+          el.classList.add(`rarity-${stack.item.rarity}`);
+
+          const img = document.createElement('img');
+          img.className = 'inv-item';
+          img.src = stack.item.icon;
+          img.alt = stack.item.name;
+          contentEl.appendChild(img);
+        }
+      } else {
+        // Fallback for old structure
+        const hint = el.querySelector('.equip-hint');
+        el.innerHTML = '';
+        if (hint) el.appendChild(hint);
+
+        if (stack) {
+          el.classList.add(`rarity-${stack.item.rarity}`);
+          const img = document.createElement('img');
+          img.className = 'inv-item';
+          img.src = stack.item.icon;
+          img.alt = stack.item.name;
+          el.appendChild(img);
+        }
       }
     });
   }
@@ -829,12 +918,18 @@ export class InventoryManager {
       if (idxStr === undefined) return;
       const idx = Number(idxStr);
 
+      // Clear rarity classes
+      el.classList.remove('rarity-common', 'rarity-uncommon', 'rarity-rare', 'rarity-epic', 'rarity-legendary');
+
       const keyEl = el.querySelector('.hotbar-key');
       el.innerHTML = '';
       if (keyEl) el.appendChild(keyEl);
 
       const stack = this.hotbar[idx];
       if (!stack) return;
+
+      // Add rarity class
+      el.classList.add(`rarity-${stack.item.rarity}`);
 
       const img = document.createElement('img');
       img.className = 'inv-item';
@@ -853,11 +948,14 @@ export class InventoryManager {
 
   private renderStats(): void {
     const derived = this.getDerivedStats();
-    this.statNameEl.textContent = this.characterName.toUpperCase();
-    this.statHpEl.textContent = `${this.hpCurrent} / ${this.hpMax}`;
+    this.statHpEl.textContent = `${this.hpCurrent}/${this.hpMax}`;
+    this.statHpEl.className = 'stat-value hp';
     this.statAtkEl.textContent = String(derived.attack);
+    this.statAtkEl.className = 'stat-value attack';
     this.statDefEl.textContent = String(derived.defense);
+    this.statDefEl.className = 'stat-value defense';
     this.statMoveEl.textContent = derived.moveSpeed.toFixed(1);
+    this.statMoveEl.className = 'stat-value move';
   }
 
   private renderCapacity(): void {
@@ -907,6 +1005,8 @@ export class InventoryManager {
     this.dragging = { stack: { item: stack.item, quantity: stack.quantity }, from };
     this.ghostEl.src = stack.item.icon;
     this.ghostEl.style.display = 'block';
+    // Set rarity glow on ghost
+    this.ghostEl.style.setProperty('--ghost-rarity-glow', RARITY_GLOW[stack.item.rarity]);
     this.updateGhost(mouseX, mouseY);
     this.renderAll();
   }
@@ -1062,6 +1162,13 @@ export class InventoryManager {
   }
 
   private handleHover(e: MouseEvent): void {
+    // Check if mouse is over the tooltip - if so, keep it visible
+    const target = e.target as HTMLElement | null;
+    if (target && this.tooltipEl.contains(target)) {
+      // Mouse is over tooltip, don't clear it
+      return;
+    }
+
     const ref = this.findSlotRefFromEvent(e);
     if (!ref) {
       this.clearHover();
@@ -1105,16 +1212,31 @@ export class InventoryManager {
     const desc = this.mustGet('tt-desc');
     const actions = this.mustGet('tt-actions');
 
-    title.textContent = `${stack.item.name} (${stack.item.rarity.toUpperCase()})`;
+    // Set rarity color CSS variable for the header bar
+    this.tooltipEl.style.setProperty('--tooltip-rarity-color', RARITY_COLOR[stack.item.rarity]);
+
+    title.textContent = stack.item.name;
     (title as HTMLElement).style.color = RARITY_COLOR[stack.item.rarity];
 
-    type.textContent = `${stack.item.type.toUpperCase()}`;
+    type.textContent = `${stack.item.rarity.toUpperCase()} ${stack.item.type.toUpperCase()}`;
 
-    const statParts: string[] = [];
-    if (stack.item.type === 'weapon' && stack.item.damage !== undefined) statParts.push(`Damage: ${stack.item.damage}`);
-    if (stack.item.type === 'armor' && stack.item.defense !== undefined) statParts.push(`Defense: ${stack.item.defense}`);
-    if (stack.item.type === 'consumable' && stack.item.effect) statParts.push(`${stack.item.effect}`);
-    stats.textContent = statParts.join(' | ');
+    // Build stats with color coding
+    stats.innerHTML = '';
+    if (stack.item.type === 'weapon' && stack.item.damage !== undefined) {
+      const span = document.createElement('span');
+      span.className = 'stat-positive';
+      span.textContent = `+${stack.item.damage} Damage`;
+      stats.appendChild(span);
+    }
+    if (stack.item.type === 'armor' && stack.item.defense !== undefined) {
+      const span = document.createElement('span');
+      span.className = 'stat-positive';
+      span.textContent = `+${stack.item.defense} Defense`;
+      stats.appendChild(span);
+    }
+    if (stack.item.type === 'consumable' && stack.item.effect) {
+      stats.textContent = stack.item.effect;
+    }
 
     desc.textContent = stack.item.description;
 
