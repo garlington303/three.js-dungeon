@@ -50,36 +50,7 @@
         z-index: 10;
       }
 
-      #crosshair {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        width: 2px;
-        height: 2px;
-        pointer-events: none;
-        z-index: 20;
-      }
 
-      #crosshair::before,
-      #crosshair::after {
-        content: '';
-        position: absolute;
-        background-color: rgba(255, 255, 255, 0.8);
-      }
-
-      #crosshair::before {
-        width: 12px;
-        height: 2px;
-        top: 0;
-        left: -5px;
-      }
-
-      #crosshair::after {
-        width: 2px;
-        height: 12px;
-        left: 0;
-        top: -5px;
-      }
 
       #dash-cooldown {
         position: fixed;
@@ -113,24 +84,6 @@
       #dash-cooldown.ready #dash-cooldown-fill {
         background: linear-gradient(90deg, #44ff88, #22cc66);
         box-shadow: 0 0 8px rgba(68, 255, 136, 0.8);
-      }
-
-      #hand-indicator {
-        position: fixed;
-        bottom: 100px;
-        right: 50px;
-        font-size: 24px;
-        color: #fff;
-        text-shadow: 2px 2px 0 #000;
-        opacity: 0;
-        transition: opacity 0.5s;
-        pointer-events: none;
-        font-family: 'Courier New', Courier, monospace;
-        font-weight: bold;
-      }
-
-      #hand-indicator.visible {
-        opacity: 1;
       }
 
       #overlay {
@@ -221,19 +174,65 @@
         text-shadow: 0 0 10px rgba(255, 204, 68, 0.5);
       }
 
+      #ammo-display {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        font-size: 24px;
+        font-weight: bold;
+        color: #fff;
+        text-shadow: 2px 2px 0 #000;
+        z-index: 15;
+        font-family: 'Courier New', monospace;
+      }
+
+      #weapon-display {
+        position: fixed;
+        bottom: 50px;
+        right: 20px;
+        font-size: 14px;
+        font-weight: bold;
+        letter-spacing: 2px;
+        color: #ffcc44;
+        text-shadow: 2px 2px 0 #000;
+        z-index: 15;
+        font-family: 'Courier New', monospace;
+        text-transform: uppercase;
+      }
+
       /* ==========================
          INVENTORY OVERLAY (ARPG UI)
          ========================== */
 
       /* Rarity Glow Keyframes */
       @keyframes legendaryPulse {
-        0%, 100% { box-shadow: inset 0 0 8px rgba(255, 136, 68, 0.4), 0 0 12px rgba(255, 136, 68, 0.3); }
-        50% { box-shadow: inset 0 0 12px rgba(255, 170, 85, 0.6), 0 0 20px rgba(255, 136, 68, 0.5); }
+        0%, 100% { 
+          box-shadow: inset 0 0 8px rgba(255, 136, 68, 0.4), 
+                      0 0 12px rgba(255, 136, 68, 0.3),
+                      0 0 30px rgba(255, 136, 68, 0.1);
+          border-color: #c07830;
+        }
+        50% { 
+          box-shadow: inset 0 0 12px rgba(255, 170, 85, 0.6), 
+                      0 0 20px rgba(255, 136, 68, 0.5),
+                      0 0 45px rgba(255, 136, 68, 0.2);
+          border-color: #d89040;
+        }
       }
 
       @keyframes epicPulse {
-        0%, 100% { box-shadow: inset 0 0 6px rgba(187, 102, 255, 0.35), 0 0 10px rgba(187, 102, 255, 0.25); }
-        50% { box-shadow: inset 0 0 10px rgba(200, 130, 255, 0.5), 0 0 16px rgba(187, 102, 255, 0.4); }
+        0%, 100% { 
+          box-shadow: inset 0 0 6px rgba(187, 102, 255, 0.35), 
+                      0 0 10px rgba(187, 102, 255, 0.25),
+                      0 0 25px rgba(187, 102, 255, 0.1);
+          border-color: #8a5aaa;
+        }
+        50% { 
+          box-shadow: inset 0 0 10px rgba(200, 130, 255, 0.5), 
+                      0 0 16px rgba(187, 102, 255, 0.4),
+                      0 0 40px rgba(187, 102, 255, 0.15);
+          border-color: #9a6aba;
+        }
       }
 
       @keyframes slotAppear {
@@ -257,8 +256,34 @@
       }
 
       @keyframes compatiblePulse {
-        0%, 100% { border-color: rgba(100, 200, 120, 0.6); box-shadow: inset 0 0 12px rgba(100, 200, 120, 0.15); }
-        50% { border-color: rgba(120, 230, 140, 0.9); box-shadow: inset 0 0 20px rgba(100, 200, 120, 0.3); }
+        0%, 100% { 
+          border-color: rgba(100, 200, 120, 0.6); 
+          box-shadow: inset 0 0 12px rgba(100, 200, 120, 0.15),
+                      0 0 15px rgba(100, 200, 120, 0.2);
+          transform: scale(1);
+        }
+        50% { 
+          border-color: rgba(120, 230, 140, 0.9); 
+          box-shadow: inset 0 0 20px rgba(100, 200, 120, 0.3),
+                      0 0 25px rgba(100, 200, 120, 0.3);
+          transform: scale(1.02);
+        }
+      }
+
+      @keyframes shimmer {
+        0% { background-position: -200% center; }
+        100% { background-position: 200% center; }
+      }
+
+      @keyframes slideIn {
+        from { 
+          opacity: 0; 
+          transform: translateX(-15px);
+        }
+        to { 
+          opacity: 1; 
+          transform: translateX(0);
+        }
       }
 
       #inventory-overlay {
@@ -428,11 +453,31 @@
         border-radius: 4px;
         border: 1px solid #3a3540;
         background: linear-gradient(180deg, #231f26 0%, #16131a 100%);
-        color: #c9bfb2;
-        cursor: default;
+        color: #7a7070;
+        cursor: pointer;
         font-size: 14px;
         display: grid;
         place-items: center;
+        transition: all 0.15s ease-out;
+      }
+
+      .inv-cat-btn:hover {
+        background: linear-gradient(180deg, #2e2932 0%, #1e1a22 100%);
+        color: #c9bfb2;
+        border-color: #4a4550;
+        transform: translateY(-1px);
+      }
+
+      .inv-cat-btn.active {
+        background: linear-gradient(180deg, #3a3040 0%, #2a2530 100%);
+        color: #ffeedd;
+        border-color: #6a5a70;
+        box-shadow: 0 0 8px rgba(180, 140, 100, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      }
+
+      .inv-cat-btn.active:hover {
+        transform: none;
       }
 
       /* Equipment Section */
@@ -474,28 +519,32 @@
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        width: 360px;
-        height: 840px;
-        background-image: url('/src/assets/ui/paperdoll-ui.png');
-        background-size: contain;
+        width: 100%;
+        height: 100%;
+        background-image: url('/src/assets/ui/paperdoll-ui2.png');
+        background-size: 150%;
         background-repeat: no-repeat;
         background-position: center;
         image-rendering: pixelated;
-        box-shadow: 0 0 60px rgba(0, 0, 0, 0.5);
         z-index: 1;
+        filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.5)) 
+                drop-shadow(0 0 40px rgba(120, 90, 70, 0.15));
+        transition: filter 0.3s ease;
       }
 
       /* Equipment Slot Base */
       .equip-slot {
         display: flex;
         flex-direction: column;
-        background: linear-gradient(180deg, #1e1a22 0%, #16131a 100%);
-        border: 1px solid #3a3540;
+        background: linear-gradient(180deg, rgba(30, 26, 34, 0.4) 0%, rgba(22, 19, 26, 0.5) 100%);
+        border: 1px solid rgba(58, 53, 64, 0.6);
         border-radius: 4px;
         overflow: hidden;
-        transition: all 0.2s ease;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
-        transform: var(--equip-transform, none);
+        animation: slideIn 0.4s ease-out backwards;
+        cursor: pointer;
+        backdrop-filter: blur(2px);
       }
 
       .equip-slot::before {
@@ -504,20 +553,60 @@
         inset: 0;
         background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%);
         pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+
+      .equip-slot::after {
+        content: '';
+        position: absolute;
+        inset: -1px;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 255, 255, 0.08) 50%,
+          transparent 100%
+        );
+        background-size: 200% 100%;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
       }
 
       .equip-slot:hover {
-        border-color: #504858;
-        background: linear-gradient(180deg, #252028 0%, #1a171e 100%);
-        transform: var(--equip-transform, none) translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        border-color: rgba(80, 72, 88, 0.8);
+        background: linear-gradient(180deg, rgba(37, 32, 40, 0.5) 0%, rgba(26, 23, 30, 0.6) 100%);
+        transform: translateX(-50%) translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4),
+                    0 0 20px rgba(80, 72, 88, 0.15);
+        backdrop-filter: blur(3px);
+      }
+
+      .equip-slot:hover::before {
+        opacity: 1.5;
+      }
+
+      .equip-slot:hover::after {
+        opacity: 1;
+        animation: shimmer 2s linear infinite;
       }
 
       .equip-slot.equipped {
-        border-color: #5a6a8a;
+        border-color: rgba(90, 106, 138, 0.8);
         box-shadow: 
-          0 0 15px rgba(90, 106, 138, 0.2),
-          inset 0 0 10px rgba(90, 106, 138, 0.1);
+          0 0 20px rgba(90, 106, 138, 0.3),
+          inset 0 0 12px rgba(90, 106, 138, 0.15),
+          0 2px 8px rgba(0, 0, 0, 0.3);
+        background: linear-gradient(180deg, rgba(36, 32, 48, 0.5) 0%, rgba(26, 24, 32, 0.6) 100%);
+      }
+
+      .equip-slot.equipped::after {
+        opacity: 0.6;
+        animation: shimmer 3s linear infinite;
+      }
+
+      .equip-slot.equipped::after {
+        opacity: 0.6;
+        animation: shimmer 3s linear infinite;
       }
 
       .equip-slot.drag-compatible {
@@ -550,10 +639,10 @@
         font-size: 9px;
         font-weight: 700;
         letter-spacing: 1.5px;
-        color: #6a6070;
+        color: rgba(106, 96, 112, 0.9);
         text-transform: uppercase;
-        background: rgba(0, 0, 0, 0.35);
-        border-bottom: 1px solid #282530;
+        background: rgba(0, 0, 0, 0.2);
+        border-bottom: 1px solid rgba(40, 37, 48, 0.4);
       }
 
       .equip-slot-content {
@@ -587,16 +676,18 @@
         position: absolute;
         width: 96px;
         z-index: 2;
+        left: 50%;
+        transform: translateX(-50%);
       }
 
       #paperdoll-area .equip-slot.large {
         width: 112px;
       }
 
-      .equip-helmet { left: 50%; top: 18px; --equip-transform: translateX(-50%); }
-      .equip-chest { left: 18px; top: 44%; --equip-transform: translateY(-50%); }
-      .equip-legs { right: 18px; top: 56%; --equip-transform: translateY(-50%); }
-      .equip-boots { left: 50%; bottom: 18px; --equip-transform: translateX(-50%); }
+      .equip-helmet { top: 40px; animation-delay: 0.05s; }
+      .equip-chest  { top: 135px; animation-delay: 0.10s; }
+      .equip-legs   { top: 230px; animation-delay: 0.15s; }
+      .equip-boots  { top: 325px; animation-delay: 0.20s; }
 
       /* Storage Section */
       #storage-section {
@@ -675,9 +766,10 @@
         align-items: center;
         justify-content: center;
         position: relative;
-        transition: all 0.15s ease;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         user-select: none;
         overflow: hidden;
+        cursor: pointer;
       }
 
       .inv-slot::before {
@@ -692,8 +784,9 @@
       .inv-slot:hover {
         border-color: #5a5560;
         background: linear-gradient(145deg, #252028 0%, #1a161e 100%);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5),
+                    0 0 20px rgba(90, 85, 96, 0.2);
       }
 
       .inv-slot:hover::before {
@@ -702,6 +795,11 @@
 
       .inv-slot:active {
         transform: translateY(0) scale(0.98);
+      }
+
+      /* Hidden slot when filtering by category */
+      .inv-slot.hidden-slot {
+        display: none;
       }
 
       /* Rarity-based slot styling */
@@ -1110,18 +1208,54 @@
         justify-content: center;
         gap: 14px;
       }
+      /* Crosshair */
+      #crosshair {
+        position: fixed;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 28px;
+        height: 28px;
+        pointer-events: none;
+        z-index: 2000;
+      }
+      #crosshair::before,
+      #crosshair::after {
+        content: '';
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 2px;
+        height: 14px;
+        background: rgba(255,255,255,0.8);
+        transform-origin: center;
+      }
+      #crosshair::after {
+        transform: translate(-50%, -50%) rotate(90deg);
+      }
+      #crosshair::before {
+        transform: translate(-50%, -50%);
+      }
+      #crosshair.flash::before,
+      #crosshair.flash::after {
+        background: #66ff88;
+        box-shadow: 0 0 8px #66ff88;
+      }
     </style>
   </head>
   <body>
+    <!-- Crosshair -->
+    <div id="crosshair" aria-hidden="true"></div>
     <div id="game-container">
       <canvas id="gameCanvas"></canvas>
     </div>
-    <div id="crosshair"></div>
+
     <div id="dash-cooldown">
       <div id="dash-cooldown-fill"></div>
     </div>
     <div id="status-indicator" class="exploring">EXPLORING</div>
-    <div id="hand-indicator">MAGE HAND</div>
+    <div id="ammo-display">6 / 6</div>
+    <div id="weapon-display">PISTOL</div>
 
     <!-- Inventory Overlay (hidden by default; toggled by JS) -->
     <div id="inventory-overlay" aria-hidden="true">
@@ -1143,7 +1277,7 @@
                   <div class="equip-slot-content"></div>
                 </div>
 
-                <div class="equip-slot equip-chest large" data-equip-slot="torso">
+                <div class="equip-slot equip-chest" data-equip-slot="torso">
                   <div class="equip-slot-label">CHEST</div>
                   <div class="equip-slot-content"></div>
                 </div>
@@ -1187,13 +1321,13 @@
               <button id="inv-close-btn" type="button" aria-label="Close inventory">×</button>
             </div>
 
-            <div id="inv-category-bar" aria-hidden="true">
-              <button class="inv-cat-btn" type="button" aria-label="Category 1">⚔</button>
-              <button class="inv-cat-btn" type="button" aria-label="Category 2">⛨</button>
-              <button class="inv-cat-btn" type="button" aria-label="Category 3">✦</button>
-              <button class="inv-cat-btn" type="button" aria-label="Category 4">☗</button>
-              <button class="inv-cat-btn" type="button" aria-label="Category 5">⌁</button>
-              <button class="inv-cat-btn" type="button" aria-label="Category 6">✎</button>
+            <div id="inv-category-bar">
+              <button class="inv-cat-btn active" type="button" data-category="all" aria-label="All Items" title="All Items">✦</button>
+              <button class="inv-cat-btn" type="button" data-category="weapon" aria-label="Weapons" title="Weapons">⚔</button>
+              <button class="inv-cat-btn" type="button" data-category="armor" aria-label="Armor" title="Armor">⛨</button>
+              <button class="inv-cat-btn" type="button" data-category="consumable" aria-label="Consumables" title="Consumables">⚗</button>
+              <button class="inv-cat-btn" type="button" data-category="key" aria-label="Keys" title="Keys">🗝</button>
+              <button class="inv-cat-btn" type="button" data-category="misc" aria-label="Miscellaneous" title="Miscellaneous">☗</button>
             </div>
 
             <div class="storage-container backpack">
@@ -1251,8 +1385,8 @@
         <p>A Three.js Dungeon Crawler</p>
         <div class="controls">
           <p><span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> Move &nbsp; <span class="key">SHIFT</span> Dash</p>
-          <p><span class="key">MOUSE</span> Look Around</p>
-          <p><span class="key">LEFT CLICK</span> Fire Ice &nbsp; <span class="key">RIGHT CLICK</span> Fire Flame</p>
+          <p><span class="key">MOUSE</span> Look Around &nbsp; <span class="key">SCROLL WHEEL</span> Switch Weapon</p>
+          <p><span class="key">LEFT CLICK</span> Fire &nbsp; <span class="key">R</span> Reload</p>
           <p><span class="key">1</span><span class="key">2</span><span class="key">3</span> Spawn Enemies</p>
         </div>
         <p class="subtitle">Click to Start</p>

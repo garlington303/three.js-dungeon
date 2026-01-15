@@ -10,10 +10,18 @@
   },
   "dependencies": {
     "@types/three": "^0.181.0",
+    "doom-wad": "^0.0.3",
     "three": "^0.181.2"
   },
   "devDependencies": {
+    "@babylonjs/core": "^8.45.4",
+    "@babylonjs/gui": "^8.45.4",
+    "@babylonjs/inspector": "^8.45.4",
+    "@babylonjs/loaders": "^8.45.4",
     "@types/node": "^22.14.0",
+    "babylonjs": "^8.45.4",
+    "babylonjs-gui": "^8.45.4",
+    "babylonjs-loaders": "^8.45.4",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

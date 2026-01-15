@@ -1,0 +1,100 @@
+{
+  "weapon": "pistol",
+  "frameCount": 9,
+  "frameWidth": 150,
+  "frameHeight": 180,
+  "sheetWidth": 1350,
+  "sheetHeight": 180,
+  "frames": [
+    {
+      "index": 0,
+      "filename": "PISTOL1.png",
+      "x": 0,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 130,
+      "originalHeight": 140
+    },
+    {
+      "index": 1,
+      "filename": "PISTOL2.png",
+      "x": 150,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 130,
+      "originalHeight": 140
+    },
+    {
+      "index": 2,
+      "filename": "PISTOL3.png",
+      "x": 300,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 130,
+      "originalHeight": 140
+    },
+    {
+      "index": 3,
+      "filename": "PISTOL4.png",
+      "x": 450,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 130,
+      "originalHeight": 140
+    },
+    {
+      "index": 4,
+      "filename": "PISTOL5.png",
+      "x": 600,
+      "y": 0,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 150,
+      "originalHeight": 180
+    },
+    {
+      "index": 5,
+      "filename": "PISTOL6.png",
+      "x": 750,
+      "y": 0,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 150,
+      "originalHeight": 180
+    },
+    {
+      "index": 6,
+      "filename": "PISTOL7.png",
+      "x": 900,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 150,
+      "originalHeight": 140
+    },
+    {
+      "index": 7,
+      "filename": "PISTOL8.png",
+      "x": 1050,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 130,
+      "originalHeight": 140
+    },
+    {
+      "index": 8,
+      "filename": "PISTOL9.png",
+      "x": 1200,
+      "y": 20,
+      "width": 150,
+      "height": 180,
+      "originalWidth": 130,
+      "originalHeight": 140
+    }
+  ]
+}

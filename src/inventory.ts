@@ -425,6 +425,10 @@ export class InventoryManager {
   private baseDefense = 0;
   private baseMoveSpeed = 2.0;
 
+  // Category filter state
+  private activeCategory: ItemType | 'all' = 'all';
+  private categoryBtns: NodeListOf<HTMLButtonElement> | null = null;
+
   // UI refs
   private overlay: HTMLElement;
   private gridEl: HTMLElement;
@@ -666,6 +670,17 @@ export class InventoryManager {
       if (this.isOpen) this.close();
     });
 
+    // Category tab switching
+    this.categoryBtns = document.querySelectorAll<HTMLButtonElement>('.inv-cat-btn');
+    this.categoryBtns.forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const category = btn.dataset.category as ItemType | 'all' | undefined;
+        if (!category) return;
+        this.setActiveCategory(category);
+      });
+    });
+
     window.addEventListener('keydown', (e) => {
       const key = e.key.toLowerCase();
       if (key === 'i' || e.key === 'Tab') {
@@ -832,15 +847,38 @@ export class InventoryManager {
 
   private renderGrid(): void {
     const nodes = this.gridEl.querySelectorAll<HTMLElement>('.inv-slot');
-    nodes.forEach((slotEl, i) => {
+    
+    // Filter items based on active category
+    const filteredSlots: Array<{ index: number; stack: ItemStack | null }> = [];
+    for (let i = 0; i < this.slotCount; i++) {
+      const stack = this.slots[i];
+      if (this.activeCategory === 'all' || !stack || stack.item.type === this.activeCategory) {
+        filteredSlots.push({ index: i, stack });
+      }
+    }
+
+    nodes.forEach((slotEl, displayIndex) => {
       slotEl.innerHTML = '';
-      // Clear rarity classes
-      slotEl.classList.remove('rarity-common', 'rarity-uncommon', 'rarity-rare', 'rarity-epic', 'rarity-legendary');
+      // Clear rarity and visibility classes
+      slotEl.classList.remove('rarity-common', 'rarity-uncommon', 'rarity-rare', 'rarity-epic', 'rarity-legendary', 'hidden-slot');
+      slotEl.classList.remove('drag-origin');
+      slotEl.removeAttribute('data-real-index');
+
+      const slotData = filteredSlots[displayIndex];
+      if (!slotData) {
+        // Hide extra slots when filtering
+        slotEl.classList.add('hidden-slot');
+        return;
+      }
+
+      const { index: realIndex, stack } = slotData;
+      slotEl.dataset.slotIndex = String(realIndex);
+      slotEl.dataset.realIndex = String(realIndex);
+
       // Mark drag origin
-      const isDragOrigin = this.dragging?.from.kind === 'inv' && this.dragging.from.index === i;
+      const isDragOrigin = this.dragging?.from.kind === 'inv' && this.dragging.from.index === realIndex;
       slotEl.classList.toggle('drag-origin', isDragOrigin);
 
-      const stack = this.slots[i];
       if (!stack) return;
 
       // Add rarity class
@@ -859,6 +897,19 @@ export class InventoryManager {
         slotEl.appendChild(count);
       }
     });
+  }
+
+  private setActiveCategory(category: ItemType | 'all'): void {
+    this.activeCategory = category;
+    
+    // Update button active states
+    this.categoryBtns?.forEach(btn => {
+      const btnCat = btn.dataset.category;
+      btn.classList.toggle('active', btnCat === category);
+    });
+
+    this.renderGrid();
+    this.renderCapacity();
   }
 
   private renderEquipment(): void {
@@ -959,9 +1010,17 @@ export class InventoryManager {
   }
 
   private renderCapacity(): void {
-    const used = this.slots.filter(s => s !== null).length;
-    this.capTextEl.textContent = `${used} / ${this.slotCount}`;
-    const pct = (used / this.slotCount) * 100;
+    const totalUsed = this.slots.filter(s => s !== null).length;
+    
+    // Show filtered count when a category is active
+    if (this.activeCategory !== 'all') {
+      const filteredCount = this.slots.filter(s => s !== null && s.item.type === this.activeCategory).length;
+      this.capTextEl.textContent = `${filteredCount} ${this.activeCategory} (${totalUsed} / ${this.slotCount} total)`;
+    } else {
+      this.capTextEl.textContent = `${totalUsed} / ${this.slotCount}`;
+    }
+    
+    const pct = (totalUsed / this.slotCount) * 100;
     this.capFillEl.style.width = `${clamp(pct, 0, 100)}%`;
   }
 

@@ -8,6 +8,15 @@ import { InventoryManager } from './inventory';
 import { AnimatedSprite } from './animatedSprite';
 import { ItemPickupManager } from './itemPickups';
 import { DUNGEON_PICKUP_LAYOUT } from './pickupLayouts';
+import { EffectsManager } from './effects';
+import { WeaponSprite } from './weaponSprite';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
+import Weapon from './weapon';
+import { LevelLoader, type LoadedLevel } from './levelLoader';
+import { RoomManager } from './world/roomManager';
+import { createBasicRoom } from './world/rooms/basicRoom';
+import { DungeonGenerator } from './world/dungeonGenerator';
 
 // ============================================================================
 // CONSTANTS
@@ -31,8 +40,8 @@ export const CONFIG = {
   DASH_COOLDOWN: 1.0,
   
   // Combat
-  PROJECTILE_SPEED: 12.0,
-  PROJECTILE_LIFETIME: 5.0,
+  PROJECTILE_SPEED: 50.0,
+  PROJECTILE_LIFETIME: 2.0,
   PROJECTILE_DAMAGE: 25,
 
   // Continuous right-click beam
@@ -248,49 +257,6 @@ class TextureManager {
     }
 
     try {
-      // Load right hand viewmodel texture
-      const rightHandTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand-right.png');
-      configureTexture(rightHandTex);
-      this.textures.set('hand-right', rightHandTex);
-      console.log('Right hand viewmodel texture loaded');
-    } catch (e) {
-      console.warn('Failed to load right hand viewmodel texture', e);
-    }
-
-    try {
-      // Load right-hand fireball animation frames (separate PNGs)
-      const frame0 = await this.loader.loadAsync('src/assets/resources/hands/hand_fireball_0.png');
-      configureTexture(frame0);
-      this.textures.set('hand-fireball-0', frame0);
-
-      const frame1 = await this.loader.loadAsync('src/assets/resources/hands/hand_fireball_1.png');
-      configureTexture(frame1);
-      this.textures.set('hand-fireball-1', frame1);
-
-      // Use the fireball-holding frame as the default right-hand viewmodel for smoother animation.
-      this.textures.set('hand-right', frame1);
-      console.log('Set hand-right to fireball-holding frame (frame1)');
-
-      const frame2 = await this.loader.loadAsync('src/assets/resources/hands/hand_fireball_2.png');
-      configureTexture(frame2);
-      this.textures.set('hand-fireball-2', frame2);
-
-      console.log('Hand fireball animation frames loaded');
-    } catch (e) {
-      console.warn('Failed to load hand fireball animation', e);
-    }
-
-    try {
-      // Load left hand viewmodel texture (separate image, not mirrored)
-      const leftHandTex = await this.loader.loadAsync('src/assets/resources/hands/Mage-hand-left2.png');
-      configureTexture(leftHandTex);
-      this.textures.set('hand-left', leftHandTex);
-      console.log('Left hand viewmodel texture loaded');
-    } catch (e) {
-      console.warn('Failed to load left hand viewmodel texture', e);
-    }
-
-    try {
       // Load heart texture for health bar
       const heartTex = await this.loader.loadAsync('src/assets/ui/heart-full.png');
       configureTexture(heartTex);
@@ -362,10 +328,158 @@ class WorldBuilder {
   private scene: THREE.Scene;
   private textures: TextureManager;
   private wallMeshes: THREE.Mesh[] = [];
+  private floorMesh: THREE.Mesh | null = null;
+  private levelData: LoadedLevel | null = null;
 
   constructor(scene: THREE.Scene, textures: TextureManager) {
     this.scene = scene;
     this.textures = textures;
+  }
+
+  setLevelData(levelData: LoadedLevel): void {
+    this.levelData = levelData;
+  }
+
+  async loadLevelModel(): Promise<void> {
+    const objLoader = new OBJLoader();
+    
+    try {
+      console.log('Attempting to load Jody\'s level OBJ...');
+      
+      // Try loading from the new location
+      const tryPaths = [
+        '/src/assets/levels/jodys-level.OBJ',
+        '/src/assets/levels/jodys-level.obj',
+        'src/assets/levels/jodys-level.OBJ',
+        'src/assets/levels/jodys-level.obj',
+      ];
+
+      let loadedObj: THREE.Group | null = null;
+      let successPath = '';
+      
+      for (const p of tryPaths) {
+        try {
+          console.log('Trying path:', p);
+          const obj = await objLoader.loadAsync(p);
+          loadedObj = obj;
+          successPath = p;
+          console.log('✓ Successfully loaded level OBJ from', p);
+          break;
+        } catch (err) {
+          console.log('✗ Failed to load from', p, ':', err);
+        }
+      }
+
+      if (!loadedObj) {
+        throw new Error('Could not load level OBJ from any path');
+      }
+
+      // Remove previously generated floor and walls so the custom level fully replaces the placeholder map
+      console.log('Removing generated floor and walls...');
+      if (this.floorMesh) {
+        this.scene.remove(this.floorMesh);
+        this.floorMesh = null;
+        console.log('✓ Removed generated floor');
+      }
+      
+      for (const w of this.wallMeshes) {
+        this.scene.remove(w);
+      }
+      console.log(`✓ Removed ${this.wallMeshes.length} generated walls`);
+      this.wallMeshes = [];
+
+      // Position and configure the loaded level - scale it up massively
+      loadedObj.position.set(0, 0, 0); // Center at origin, ground level
+      loadedObj.scale.set(100, 100, 100); // Scale up significantly more
+      
+      // Rotate to correct orientation - OBJ files often need rotation adjustments
+      // Three.js uses Y-up, many modeling tools use Z-up
+      loadedObj.rotation.x = -Math.PI / 2; // Rotate 90 degrees around X to make it horizontal
+      loadedObj.rotation.y = 0;
+      loadedObj.rotation.z = 0;
+      
+      console.log('Applied rotation:', {
+        x: loadedObj.rotation.x,
+        y: loadedObj.rotation.y,
+        z: loadedObj.rotation.z
+      });
+      
+      // Enable shadows on all meshes and ensure they use proper materials
+      let meshCount = 0;
+      loadedObj.traverse((child) => {
+        if ((child as any).isMesh) {
+          const mesh = child as THREE.Mesh;
+          mesh.receiveShadow = true;
+          mesh.castShadow = true;
+          
+          // Ensure material exists and has proper lighting response
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach(mat => {
+                if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhongMaterial) {
+                  mat.needsUpdate = true;
+                }
+              });
+            } else if (mesh.material instanceof THREE.MeshBasicMaterial) {
+              // Convert MeshBasicMaterial to MeshStandardMaterial for proper lighting
+              const basicMat = mesh.material as THREE.MeshBasicMaterial;
+              mesh.material = new THREE.MeshStandardMaterial({
+                color: basicMat.color,
+                map: basicMat.map,
+                side: basicMat.side,
+              });
+            }
+          }
+          meshCount++;
+        }
+      });
+      
+      loadedObj.name = 'jodysLevel';
+      this.scene.add(loadedObj);
+      
+      // Calculate bounding box for debugging
+      const bbox = new THREE.Box3().setFromObject(loadedObj);
+      const size = new THREE.Vector3();
+      bbox.getSize(size);
+      
+      console.log(`✓ Added Jody's level to scene (${meshCount} meshes, from ${successPath})`);
+      console.log('Level position:', loadedObj.position);
+      console.log('Level scale:', loadedObj.scale);
+      console.log('Level bounding box:', bbox);
+      console.log('Level size:', size);
+      
+      // Add strong lights to illuminate the custom level
+      console.log('Adding lights for custom level...');
+      
+      // Multiple point lights positioned around the level
+      const lightPositions = [
+        [0, 10, 0],     // Center overhead
+        [15, 8, 15],    // Front right
+        [-15, 8, 15],   // Front left
+        [15, 8, -15],   // Back right
+        [-15, 8, -15],  // Back left
+      ];
+      
+      lightPositions.forEach(([x, y, z], i) => {
+        const light = new THREE.PointLight(0xffffff, 2.0, 50);
+        light.position.set(x, y, z);
+        light.castShadow = true;
+        light.shadow.mapSize.width = 1024;
+        light.shadow.mapSize.height = 1024;
+        light.name = `customLevelLight${i}`;
+        this.scene.add(light);
+      });
+      
+      // Add bright ambient light for the custom level
+      const customAmbient = new THREE.AmbientLight(0xffffff, 0.8);
+      customAmbient.name = 'customLevelAmbient';
+      this.scene.add(customAmbient);
+      
+      console.log('✓ Added lighting for custom level');
+    } catch (e) {
+      console.error('Failed to load Jody\'s level OBJ:', e);
+      console.log('Keeping generated floor/walls as fallback');
+    }
   }
 
   build(): void {
@@ -375,7 +489,8 @@ class WorldBuilder {
   }
 
   private createFloor(): void {
-    const floorGeometry = new THREE.PlaneGeometry(CONFIG.MAP_SIZE, CONFIG.MAP_SIZE);
+    const mapSize = this.levelData?.config.width ?? CONFIG.MAP_SIZE;
+    const floorGeometry = new THREE.PlaneGeometry(mapSize, mapSize);
     const floorTexture = this.textures.get('floor');
     
     const floorMaterial = new THREE.MeshStandardMaterial({
@@ -386,8 +501,9 @@ class WorldBuilder {
 
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(CONFIG.MAP_SIZE / 2, 0, CONFIG.MAP_SIZE / 2);
+    floor.position.set(mapSize / 2, 0, mapSize / 2);
     floor.receiveShadow = true;
+    this.floorMesh = floor;
     this.scene.add(floor);
   }
 
@@ -395,9 +511,14 @@ class WorldBuilder {
     // Create materials for each wall type
     const wallMaterials = this.createWallMaterials();
 
-    for (let x = 0; x < CONFIG.MAP_SIZE; x++) {
-      for (let z = 0; z < CONFIG.MAP_SIZE; z++) {
-        const cell = DUNGEON_MAP[z][x];
+    // Use level data if available, otherwise fallback to hardcoded map
+    const mapData = this.levelData?.mapData ?? DUNGEON_MAP;
+    const width = this.levelData?.config.width ?? CONFIG.MAP_SIZE;
+    const height = this.levelData?.config.height ?? CONFIG.MAP_SIZE;
+
+    for (let x = 0; x < width; x++) {
+      for (let z = 0; z < height; z++) {
+        const cell = mapData[z][x];
         if (cell === 4) {
           // Door to dungeon2
           this.createDoor(x, z);
@@ -1092,11 +1213,25 @@ class PlayerController {
   private onDoorEnter?: (targetScene: SceneType) => void;
   private doorCooldown = 0; // Prevent rapid scene switching
   
+  // Map data for collision detection
+  private dungeonMapData: number[][] = DUNGEON_MAP;
+  private dungeonMapSize = CONFIG.MAP_SIZE;
+  
   // Dash system
   private isDashing = false;
   private dashTimer = 0;
   private dashCooldown = 0;
   private dashDirection = new THREE.Vector3();
+
+  // Jump system
+  private isJumping = false;
+  private verticalVelocity = 0;
+  private readonly jumpForce = 4.5;
+  private readonly gravity = -15.0;
+  private readonly groundLevel = CONFIG.PLAYER_HEIGHT;
+
+  // External collision callback (for RoomManager)
+  private collisionCallback?: (x: number, z: number, radius: number) => boolean;
 
   constructor(canvas: HTMLCanvasElement) {
     // Create camera
@@ -1117,6 +1252,19 @@ class PlayerController {
     this.setupInputs(canvas);
   }
 
+  // -------------------- Recoil --------------------
+  private recoilPitch = 0; // radians
+  private recoilYaw = 0; // radians
+  private recoilDecay = 8.0; // how quickly recoil decays (larger = faster)
+
+  /**
+   * Add recoil to the player's view. Pitch is up (negative) in radians, yaw is horizontal.
+   */
+  public addRecoil(pitch: number, yaw: number): void {
+    this.recoilPitch += pitch;
+    this.recoilYaw += yaw;
+  }
+
   setPaused(paused: boolean): void {
     this.isPaused = paused;
     if (paused) {
@@ -1131,6 +1279,15 @@ class PlayerController {
     this.attack = stats.attack;
     this.defense = stats.defense;
     this.moveSpeed = stats.moveSpeed;
+  }
+
+  setDungeonMapData(mapData: number[][], mapSize: number): void {
+    this.dungeonMapData = mapData;
+    this.dungeonMapSize = mapSize;
+  }
+
+  setCollisionCallback(callback: (x: number, z: number, radius: number) => boolean): void {
+    this.collisionCallback = callback;
   }
 
   getAttack(): number {
@@ -1193,6 +1350,12 @@ class PlayerController {
       this.startDash();
     }
 
+    // Check for jump input (Spacebar)
+    const spacePressed = this.keys['Space'];
+    if (spacePressed && !this.isJumping && this.position.y <= this.groundLevel + 0.01) {
+      this.startJump();
+    }
+
     // Handle active dash
     if (this.isDashing) {
       this.dashTimer -= dt;
@@ -1210,9 +1373,14 @@ class PlayerController {
           this.position.z = newPos.z;
         }
         
-        // Update camera during dash
+        // Update camera during dash (apply recoil offsets)
         this.camera.position.copy(this.position);
-        this.camera.quaternion.setFromEuler(this.euler);
+        // Decay recoil
+        const decayFactor = Math.min(1, this.recoilDecay * dt);
+        this.recoilPitch -= this.recoilPitch * decayFactor;
+        this.recoilYaw -= this.recoilYaw * decayFactor;
+        const displayedEulerDash = new THREE.Euler(this.euler.x + this.recoilPitch, this.euler.y + this.recoilYaw, this.euler.z, this.euler.order);
+        this.camera.quaternion.setFromEuler(displayedEulerDash);
         return; // Skip normal movement during dash
       }
     }
@@ -1239,19 +1407,45 @@ class PlayerController {
       // Collision detection
       const newPos = this.position.clone().add(moveDir);
       
+      console.log(`[PlayerController] Attempting move from (${this.position.x.toFixed(2)}, ${this.position.z.toFixed(2)}) to (${newPos.x.toFixed(2)}, ${newPos.z.toFixed(2)})`);
+      
       // Check X movement
       if (this.canMoveTo(newPos.x, this.position.z)) {
         this.position.x = newPos.x;
+        console.log(`[PlayerController] X movement allowed`);
+      } else {
+        console.log(`[PlayerController] X movement BLOCKED at (${newPos.x.toFixed(2)}, ${this.position.z.toFixed(2)})`);
       }
       // Check Z movement
       if (this.canMoveTo(this.position.x, newPos.z)) {
         this.position.z = newPos.z;
+        console.log(`[PlayerController] Z movement allowed`);
+      } else {
+        console.log(`[PlayerController] Z movement BLOCKED at (${this.position.x.toFixed(2)}, ${newPos.z.toFixed(2)})`);
       }
     }
 
-    // Update camera
+    // Update jump physics
+    if (this.isJumping || this.position.y > this.groundLevel) {
+      this.verticalVelocity += this.gravity * dt;
+      this.position.y += this.verticalVelocity * dt;
+
+      // Land on ground
+      if (this.position.y <= this.groundLevel) {
+        this.position.y = this.groundLevel;
+        this.verticalVelocity = 0;
+        this.isJumping = false;
+      }
+    }
+
+    // Update camera (apply recoil offsets)
     this.camera.position.copy(this.position);
-    this.camera.quaternion.setFromEuler(this.euler);
+    // Decay recoil over time
+    const decayFactorMain = Math.min(1, this.recoilDecay * dt);
+    this.recoilPitch -= this.recoilPitch * decayFactorMain;
+    this.recoilYaw -= this.recoilYaw * decayFactorMain;
+    const displayedEuler = new THREE.Euler(this.euler.x + this.recoilPitch, this.euler.y + this.recoilYaw, this.euler.z, this.euler.order);
+    this.camera.quaternion.setFromEuler(displayedEuler);
   }
 
   private canMoveTo(x: number, z: number): boolean {
@@ -1264,6 +1458,13 @@ class PlayerController {
 
   private canMoveInDungeon(x: number, z: number): boolean {
     const margin = 0.2;
+    
+    // Check against RoomManager collision meshes first
+    if (this.collisionCallback && this.collisionCallback(x, z, margin)) {
+      console.log(`[PlayerController] RoomManager collision detected at (${x.toFixed(2)}, ${z.toFixed(2)})`);
+      return false;
+    }
+
     const checks = [
       [x - margin, z - margin],
       [x + margin, z - margin],
@@ -1274,12 +1475,14 @@ class PlayerController {
     for (const [checkX, checkZ] of checks) {
       const mapX = Math.floor(checkX);
       const mapZ = Math.floor(checkZ);
-      if (mapX < 0 || mapX >= CONFIG.MAP_SIZE || mapZ < 0 || mapZ >= CONFIG.MAP_SIZE) {
+      if (mapX < 0 || mapX >= this.dungeonMapSize || mapZ < 0 || mapZ >= this.dungeonMapSize) {
+        console.log(`[PlayerController] Out of bounds at grid (${mapX}, ${mapZ})`);
         return false;
       }
-      const cell = DUNGEON_MAP[mapZ][mapX];
+      const cell = this.dungeonMapData[mapZ]?.[mapX];
       // Allow movement through doors (cell === 4), block walls (cell 1-3)
-      if (cell > 0 && cell !== 4) {
+      if (cell !== undefined && cell > 0 && cell !== 4) {
+        console.log(`[PlayerController] Grid cell blocked at (${mapX}, ${mapZ}), cell value: ${cell}`);
         return false;
       }
     }
@@ -1389,6 +1592,11 @@ class PlayerController {
     this.dashCooldown = CONFIG.DASH_COOLDOWN;
   }
 
+  private startJump(): void {
+    this.isJumping = true;
+    this.verticalVelocity = this.jumpForce;
+  }
+
   setHealthChangeCallback(callback: (health: number, maxHealth: number) => void): void {
     this.onHealthChange = callback;
     // Trigger initial update
@@ -1441,11 +1649,17 @@ class PlayerController {
   teleportTo(x: number, z: number, facingAngle?: number): void {
     this.position.x = x;
     this.position.z = z;
+    // Explicitly ensure Y is preserved (should be CONFIG.PLAYER_HEIGHT = 0.5)
+    if (this.position.y !== CONFIG.PLAYER_HEIGHT) {
+      console.warn(`[PlayerController] Y was ${this.position.y}, resetting to ${CONFIG.PLAYER_HEIGHT}`);
+      this.position.y = CONFIG.PLAYER_HEIGHT;
+    }
     if (facingAngle !== undefined) {
       this.euler.y = facingAngle;
     }
     this.camera.position.copy(this.position);
     this.camera.quaternion.setFromEuler(this.euler);
+    console.log(`[PlayerController] Teleported to (${x.toFixed(2)}, ${this.position.y}, ${z.toFixed(2)}), camera at (${this.camera.position.x.toFixed(2)}, ${this.camera.position.y.toFixed(2)}, ${this.camera.position.z.toFixed(2)})`);
   }
 }
 
@@ -1931,10 +2145,9 @@ class ProjectileManager {
   }
 
   fire(position: THREE.Vector3, direction: THREE.Vector3, hand: 'left' | 'right', damage: number): void {
-    // Create projectile mesh
-    const geometry = new THREE.SphereGeometry(0.1, 8, 8);
-    const color = hand === 'left' ? 0x4488ff : 0xff8844;
-    const material = new THREE.MeshBasicMaterial({ color });
+    // Create invisible projectile for collision
+    const geometry = new THREE.SphereGeometry(0.05, 4, 4);
+    const material = new THREE.MeshBasicMaterial({ visible: false });
     const mesh = new THREE.Mesh(geometry, material);
 
     const dir = direction.clone();
@@ -1943,20 +2156,6 @@ class ProjectileManager {
 
     // Position is already offset by the caller (camera + hand offset)
     mesh.position.copy(position);
-
-    // Add glow effect
-    const glowGeometry = new THREE.SphereGeometry(0.15, 8, 8);
-    const glowMaterial = new THREE.MeshBasicMaterial({ 
-      color, 
-      transparent: true, 
-      opacity: 0.3 
-    });
-    const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-    mesh.add(glow);
-
-    // Add point light
-    const light = new THREE.PointLight(color, 0.5, 3);
-    mesh.add(light);
 
     this.scene.add(mesh);
 
@@ -2031,6 +2230,8 @@ class BeamManager {
   private start = new THREE.Vector3();
   private end = new THREE.Vector3();
   private tmp = new THREE.Vector3();
+  private dungeonMapData: number[][] = DUNGEON_MAP;
+  private dungeonMapSize = CONFIG.MAP_SIZE;
 
   constructor(scene: THREE.Scene, enemyManager: EnemyManager) {
     this.scene = scene;
@@ -2060,6 +2261,11 @@ class BeamManager {
     this.scene = scene;
     this.scene.add(this.glow);
     this.scene.add(this.line);
+  }
+
+  setDungeonMapData(mapData: number[][], mapSize: number): void {
+    this.dungeonMapData = mapData;
+    this.dungeonMapSize = mapSize;
   }
 
   startBeam(): void {
@@ -2126,8 +2332,8 @@ class BeamManager {
     if (sceneType === 'dungeon') {
       const mapX = Math.floor(x);
       const mapZ = Math.floor(z);
-      if (mapX < 0 || mapX >= CONFIG.MAP_SIZE || mapZ < 0 || mapZ >= CONFIG.MAP_SIZE) return true;
-      const cell = DUNGEON_MAP[mapZ]?.[mapX];
+      if (mapX < 0 || mapX >= this.dungeonMapSize || mapZ < 0 || mapZ >= this.dungeonMapSize) return true;
+      const cell = this.dungeonMapData[mapZ]?.[mapX];
       return cell === undefined ? true : (cell > 0 && cell !== 4);
     }
 
@@ -2157,28 +2363,8 @@ class BeamManager {
 // ============================================================================
 
 class HUDManager {
-  private rightHandSprite: THREE.Sprite | null = null;
-  private leftHandSprite: THREE.Sprite | null = null;
-  private rightHandFireballFrames: THREE.Texture[] = [];
-  private rightHandFireballFrameIndex = -1;
-  private rightHandFireballAnimTimer = 0;
-  private rightHandFireballAnimDuration = 1.2;
   private camera: THREE.Camera;
   private textures: TextureManager;
-  private leftCastTimer = 0;
-  private rightCastTimer = 0;
-  private castDuration = 0.15;
-  private bobPhase = 0;
-  
-  // Hand selection
-  private availableHands: string[] = ['hand-right'];
-  private currentHandIndex = 0;
-  private handIndicatorTimeout: number | null = null;
-
-  // Magic hand lights
-  private leftHandLight: THREE.PointLight | null = null;
-  private rightHandLight: THREE.PointLight | null = null;
-  private magicPulsePhase = 0;
   
   // Health display
   private heartSprites: THREE.Sprite[] = [];
@@ -2193,147 +2379,7 @@ class HUDManager {
 
     // Create heart sprites for health display
     this.createHeartSprites();
-
-    // Create hand sprites if textures available
-    this.setupFireballFrames();
-    this.updateRightHandTexture();
-    
-    const leftHandTexture = textures.get('hand-left');
-    
-    // Right hand (initialized in updateRightHandTexture)
-
-    // Left hand (using dedicated left hand texture)
-    if (leftHandTexture) {
-      // Prevent edge bleeding artifacts
-      leftHandTexture.wrapS = THREE.ClampToEdgeWrapping;
-      leftHandTexture.wrapT = THREE.ClampToEdgeWrapping;
-      leftHandTexture.premultiplyAlpha = false;
-
-      const leftMaterial = new THREE.SpriteMaterial({
-        map: leftHandTexture,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-      });
-      this.leftHandSprite = new THREE.Sprite(leftMaterial);
-      this.leftHandSprite.scale.set(0.4, 0.4, 0.4);
-      this.leftHandSprite.renderOrder = 999;
-      camera.add(this.leftHandSprite);
-    }
-
-    // Create magic ambient lights for hands
-    this.createHandLights();
-
-    this.updateHandPositions();
     this.updateHeartPositions();
-  }
-
-  private updateRightHandTexture(): void {
-    const textureName = this.availableHands[this.currentHandIndex];
-    const texture = this.textures.get(textureName);
-
-    if (!texture) {
-      console.warn('Right hand texture not found:', textureName);
-      return;
-    }
-    console.log('Updating right hand texture:', textureName, 'sprite exists:', !!this.rightHandSprite);
-
-    // Prevent edge bleeding artifacts
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.premultiplyAlpha = false;
-
-    if (!this.rightHandSprite) {
-      const rightMaterial = new THREE.SpriteMaterial({
-        map: texture,
-        transparent: true,
-        depthTest: false,
-        depthWrite: false,
-      });
-      this.rightHandSprite = new THREE.Sprite(rightMaterial);
-      this.rightHandSprite.scale.set(0.4, 0.4, 0.4);
-      this.rightHandSprite.renderOrder = 999;
-      this.camera.add(this.rightHandSprite);
-    } else {
-      this.rightHandSprite.material.map = texture;
-      this.rightHandSprite.material.needsUpdate = true;
-    }
-  }
-
-  private setupFireballFrames(): void {
-    const frame0 = this.textures.get('hand-fireball-0');
-    const frame1 = this.textures.get('hand-fireball-1');
-    const frame2 = this.textures.get('hand-fireball-2');
-
-    // Order: hold -> throw -> open (then restores to idle right hand)
-    const frames = [frame1, frame2, frame0].filter((t): t is THREE.Texture => Boolean(t));
-    if (frames.length !== 3) return;
-
-    // Prevent edge bleeding artifacts
-    for (const tex of frames) {
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.premultiplyAlpha = false;
-    }
-
-    this.rightHandFireballFrames = frames;
-    console.log('Fireball hand frames ready', {
-      frame0: !!frame0,
-      frame1: !!frame1,
-      frame2: !!frame2,
-      rightHandTexture: !!this.textures.get('hand-right')
-    });
-  }
-
-  public getRightHandThrowDelaySeconds(): number {
-    // We spawn the projectile at the start of the "throw" frame (index 1), which begins at 1/3 progress.
-    return this.rightHandFireballAnimDuration / 3;
-  }
-
-  private setRightHandTexture(texture: THREE.Texture): void {
-    if (!this.rightHandSprite) return;
-    this.rightHandSprite.material.map = texture;
-    this.rightHandSprite.material.needsUpdate = true;
-  }
-
-  public cycleHand(direction: number): void {
-    if (direction > 0) {
-      this.currentHandIndex = (this.currentHandIndex + 1) % this.availableHands.length;
-    } else {
-      this.currentHandIndex = (this.currentHandIndex - 1 + this.availableHands.length) % this.availableHands.length;
-    }
-    this.updateRightHandTexture();
-    
-    // Reset bob phase to sync animation with switch
-    this.bobPhase = 0;
-
-    // Show indicator
-    const indicator = document.getElementById('hand-indicator');
-    if (indicator) {
-      const handName = this.availableHands[this.currentHandIndex].replace('hand-', '').replace('hand', 'Mage Hand').toUpperCase();
-      indicator.textContent = handName;
-      indicator.classList.add('visible');
-      
-      if (this.handIndicatorTimeout) {
-        window.clearTimeout(this.handIndicatorTimeout);
-      }
-      
-      this.handIndicatorTimeout = window.setTimeout(() => {
-        indicator.classList.remove('visible');
-      }, 2000);
-    }
-  }
-
-  private createHandLights(): void {
-    // Left hand - blue/cyan magic glow
-    this.leftHandLight = new THREE.PointLight(0x4488ff, 0.6, 3);
-    this.leftHandLight.position.set(-0.3, -0.1, -0.4);
-    this.camera.add(this.leftHandLight);
-
-    // Right hand - orange/fire magic glow
-    this.rightHandLight = new THREE.PointLight(0xff8844, 0.6, 3);
-    this.rightHandLight.position.set(0.3, -0.1, -0.4);
-    this.camera.add(this.rightHandLight);
   }
 
   private createHeartSprites(): void {
@@ -2418,115 +2464,8 @@ class HUDManager {
     this.updateHeartPositions();
   }
 
-  private updateHandPositions(): void {
-    // Idle bob animation (slightly offset between hands)
-    const bobRight = Math.sin(this.bobPhase) * 0.01;
-    const bobLeft = Math.sin(this.bobPhase + 0.5) * 0.01;
-
-    // Right hand - lower right of view
-    if (this.rightHandSprite) {
-      const rightCastOffset = this.rightCastTimer > 0
-        ? Math.sin((this.rightCastTimer / this.castDuration) * Math.PI) * 0.08
-        : 0;
-      const offsetX = 0.25 - rightCastOffset * 0.3;
-      const offsetY = -0.2 + rightCastOffset + bobRight;
-      this.rightHandSprite.position.set(offsetX, offsetY, -0.5);
-    }
-
-    // Left hand - lower left of view (mirrored)
-    if (this.leftHandSprite) {
-      const leftCastOffset = this.leftCastTimer > 0
-        ? Math.sin((this.leftCastTimer / this.castDuration) * Math.PI) * 0.08
-        : 0;
-      const offsetX = -0.25 + leftCastOffset * 0.3;
-      const offsetY = -0.2 + leftCastOffset + bobLeft;
-      this.leftHandSprite.position.set(offsetX, offsetY, -0.5);
-    }
-  }
-
-  triggerCast(hand: 'left' | 'right'): void {
-    if (hand === 'left') {
-      this.leftCastTimer = this.castDuration;
-    } else {
-      this.rightCastTimer = this.castDuration;
-      this.rightHandFireballFrameIndex = -1;
-      this.rightHandFireballAnimTimer = this.rightHandFireballAnimDuration;
-    }
-  }
-
   update(dt: number): void {
-    // Update cast timers
-    if (this.leftCastTimer > 0) {
-      this.leftCastTimer -= dt;
-      if (this.leftCastTimer < 0) this.leftCastTimer = 0;
-    }
-    if (this.rightCastTimer > 0) {
-      this.rightCastTimer -= dt;
-      if (this.rightCastTimer < 0) this.rightCastTimer = 0;
-    }
-
-    // Update right-hand fireball texture swap animation
-    if (this.rightHandSprite && this.rightHandFireballFrames.length === 3) {
-      if (this.rightHandFireballAnimTimer > 0) {
-        this.rightHandFireballAnimTimer -= dt;
-        if (this.rightHandFireballAnimTimer < 0) this.rightHandFireballAnimTimer = 0;
-
-        const progress = 1 - this.rightHandFireballAnimTimer / this.rightHandFireballAnimDuration; // 0..1
-        const idx = Math.max(0, Math.min(2, Math.floor(progress * 3)));
-        if (idx !== this.rightHandFireballFrameIndex) {
-          this.rightHandFireballFrameIndex = idx;
-          this.setRightHandTexture(this.rightHandFireballFrames[idx]);
-        }
-      } else if (this.rightHandFireballFrameIndex !== -1) {
-        // Restore to the selected idle/right-hand texture when cast finishes
-        this.rightHandFireballFrameIndex = -1;
-        this.updateRightHandTexture();
-      }
-    }
-
-    // Update bob phase
-    this.bobPhase += dt * 3;
-
-    // Update magic pulse phase for ambient hand glow
-    this.magicPulsePhase += dt * 4;
-
-    // Update hand light intensities with pulsing effect
-    this.updateHandLights();
-
-    this.updateHandPositions();
-  }
-
-  private updateHandLights(): void {
-    // Base pulse intensity (subtle ambient glow)
-    const basePulse = 0.4 + Math.sin(this.magicPulsePhase) * 0.15;
-    
-    // Left hand light - boost during casting
-    if (this.leftHandLight) {
-      const castBoost = this.leftCastTimer > 0 
-        ? Math.sin((this.leftCastTimer / this.castDuration) * Math.PI) * 1.5 
-        : 0;
-      this.leftHandLight.intensity = basePulse + castBoost;
-      
-      // Update position to follow hand sprite
-      if (this.leftHandSprite) {
-        this.leftHandLight.position.copy(this.leftHandSprite.position);
-        this.leftHandLight.position.z += 0.1; // Slightly in front of hand
-      }
-    }
-
-    // Right hand light - boost during casting  
-    if (this.rightHandLight) {
-      const castBoost = this.rightCastTimer > 0 
-        ? Math.sin((this.rightCastTimer / this.castDuration) * Math.PI) * 1.5 
-        : 0;
-      this.rightHandLight.intensity = basePulse + castBoost;
-      
-      // Update position to follow hand sprite
-      if (this.rightHandSprite) {
-        this.rightHandLight.position.copy(this.rightHandSprite.position);
-        this.rightHandLight.position.z += 0.1; // Slightly in front of hand
-      }
-    }
+    // Health display is static, no per-frame updates needed
   }
 }
 
@@ -2548,9 +2487,27 @@ export class Game {
   private coinManager!: CoinManager;
   private itemPickupManager!: ItemPickupManager;
   private inventoryManager!: InventoryManager;
+  private effectsManager!: EffectsManager;
+  private roomManager!: RoomManager;
+  private dungeonGenerator!: DungeonGenerator;
+  private weaponSprite!: WeaponSprite;
   private clock = new THREE.Clock();
   private currentScene: SceneType = 'dungeon';
   private isPaused = false;
+  private canvas!: HTMLCanvasElement;
+
+  // Weapon switching system
+  private availableWeapons = ['pistol', 'glock', 'crowbar', 'hammer'];
+  private currentWeaponIndex = 0;
+  private weaponSwitchCooldown = 0;
+
+  // Ammo system
+  private currentAmmo = 6;
+  private maxAmmo = 6;
+  private isReloading = false;
+  private weaponInstance?: Weapon;
+
+  private dungeonLevel?: LoadedLevel; // Store loaded level data
 
   private pendingProjectiles: Array<{
     timeLeft: number;
@@ -2564,16 +2521,16 @@ export class Game {
     console.log('Game constructor started');
     
     // Get canvas
-    const canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
-    if (!canvas) {
+    this.canvas = document.getElementById('gameCanvas') as HTMLCanvasElement;
+    if (!this.canvas) {
       console.error('Canvas element not found!');
       return;
     }
-    console.log('Canvas found:', canvas.width, canvas.height);
+    console.log('Canvas found:', this.canvas.width, this.canvas.height);
 
     // Create renderer with advanced settings
     this.renderer = new THREE.WebGLRenderer({ 
-      canvas,
+      canvas: this.canvas,
       antialias: true,
       powerPreference: 'high-performance',
     });
@@ -2594,37 +2551,76 @@ export class Game {
 
     // Initialize managers
     this.textures = new TextureManager();
-    this.player = new PlayerController(canvas);
+    this.player = new PlayerController(this.canvas);
     
     // Add camera to scene
     this.scene.add(this.player.camera);
     console.log('Player created at', this.player.position);
 
-    // Setup mouse for firing
+    // Setup mouse for firing - delegate to Weapon if present
     document.addEventListener('mousedown', (e) => {
       if (this.isPaused) return;
       if (!this.player.isActive()) return;
-      
+      // Delegate to weapon instance if available
+      if ((this as any).weapon) {
+        try {
+          (this as any).weapon.handleMouseDown(e);
+          return;
+        } catch (err) {
+          console.warn('Weapon handler error, falling back to legacy fire', err);
+        }
+      }
+
+      // Legacy fallback (should be rare)
+      if (this.isReloading) return;
+
       if (e.button === 0) {
-        this.queueProjectile('left', 0);
+        if (this.currentAmmo > 0) {
+          this.currentAmmo--;
+          this.updateAmmoDisplay();
+          this.weaponSprite?.play('fire');
+          this.queueProjectile('left', 0);
+        } else {
+          console.log('Click! Out of ammo.');
+        }
       } else if (e.button === 2) {
-        // Right click fires a projectile (aligned with the hand animation)
-        const delay = this.hudManager?.getRightHandThrowDelaySeconds?.() ?? 0;
-        this.queueProjectile('right', delay);
+        if (this.currentAmmo > 0) {
+          this.currentAmmo--;
+          this.updateAmmoDisplay();
+          this.weaponSprite?.play('fire');
+          this.queueProjectile('right', 0);
+        }
       }
     });
 
-    // Mouse wheel for hand cycling
-    document.addEventListener('wheel', (e) => {
+    // Setup keyboard for reload
+    window.addEventListener('keydown', (e) => {
       if (this.isPaused) return;
       if (!this.player.isActive()) return;
-      
-      if (this.hudManager) {
-        // Normalize deltaY to direction (-1 or 1)
-        const direction = e.deltaY > 0 ? 1 : -1;
-        this.hudManager.cycleHand(direction);
+
+      if (e.code === 'KeyR') {
+        // Don't reload if already reloading or full
+        if (this.isReloading || this.currentAmmo === this.maxAmmo) return;
+        
+        this.startReload();
       }
     });
+
+    // Setup mouse wheel for weapon switching
+    window.addEventListener('wheel', (e) => {
+      if (this.isPaused) return;
+      if (!this.player.isActive()) return;
+      if (this.weaponSwitchCooldown > 0) return;
+
+      e.preventDefault();
+      
+      // Scroll up = previous weapon, Scroll down = next weapon
+      if (e.deltaY < 0) {
+        this.switchWeapon(-1);
+      } else if (e.deltaY > 0) {
+        this.switchWeapon(1);
+      }
+    }, { passive: false });
 
     // Prevent context menu
     document.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -2647,10 +2643,28 @@ export class Game {
         this.scene.background = new THREE.Color(0x111122);
       }
 
-      // Build dungeon world
+      // Load dungeon level from JSON
+      console.log('Loading dungeon level from JSON...');
+      const dungeonLevel = await LevelLoader.loadDungeon1();
+      this.dungeonLevel = dungeonLevel; // Store for use in spawn methods
+      console.log(`Loaded level: ${dungeonLevel.name}`);
+      console.log(`Map size: ${dungeonLevel.config.width}x${dungeonLevel.config.height}`);
+
+      // Build dungeon world with loaded level data
       this.worldBuilder = new WorldBuilder(this.scene, this.textures);
+      this.worldBuilder.setLevelData(dungeonLevel);
       this.worldBuilder.build();
-      console.log('Dungeon world built');
+      // await this.worldBuilder.loadLevelModel(); // Disabled - using placeholder dungeon
+      console.log('Dungeon world built from JSON');
+
+      // Position player at spawn point from level data
+      const spawnPos = LevelLoader.getSpawnPosition(dungeonLevel);
+      const spawnFacing = LevelLoader.getSpawnFacing(dungeonLevel);
+      this.player.teleportTo(spawnPos.x, spawnPos.z, spawnFacing);
+      console.log(`Player spawned at (${spawnPos.x.toFixed(1)}, ${spawnPos.z.toFixed(1)}) facing ${spawnFacing.toFixed(2)}`);
+
+      // Set map data on player for collision detection
+      this.player.setDungeonMapData(dungeonLevel.mapData, dungeonLevel.config.width);
 
       // Create dungeon2 scene
       this.dungeon2Scene = new THREE.Scene();
@@ -2731,6 +2745,68 @@ export class Game {
       this.itemPickupManager = new ItemPickupManager(this.scene, this.inventoryManager);
       this.spawnDungeonItemPickupsFromLayout();
 
+      // Initialize RoomManager and wire up collision detection
+      this.roomManager = new RoomManager(this.scene);
+      
+      // Create floor and wall materials for procedural rooms
+      const roomFloorMaterial = new THREE.MeshStandardMaterial({
+        color: 0x554433,
+        roughness: 0.9,
+        metalness: 0.1,
+      });
+      const roomWallMaterial = new THREE.MeshStandardMaterial({
+        color: 0x665544,
+        roughness: 0.85,
+        metalness: 0.05,
+      });
+      
+      // Initialize DungeonGenerator with roguelite settings
+      this.dungeonGenerator = new DungeonGenerator(
+        {
+          minRooms: 10,
+          maxRooms: 18,
+          treasureRoomChance: 0.2,
+          shrineRoomChance: 0.1,
+          branchingFactor: 0.35,
+          // seed: 12345, // Uncomment to test with fixed seed
+        },
+        { floor: roomFloorMaterial, wall: roomWallMaterial }
+      );
+
+      // Generate and build the procedural dungeon
+      this.dungeonGenerator.generate();
+      const proceduralSpawnPoint = this.dungeonGenerator.buildAllRooms(this.scene, this.roomManager);
+      console.log(`[Game] Procedural dungeon generated with seed: ${this.dungeonGenerator.getSeed()}`);
+      console.log(`[Game] Spawn point: (${proceduralSpawnPoint.x.toFixed(1)}, ${proceduralSpawnPoint.z.toFixed(1)})`);
+
+      // Teleport player to procedural dungeon spawn
+      this.player.teleportTo(proceduralSpawnPoint.x, proceduralSpawnPoint.z, 0);
+      console.log(`[Game] Player position after teleport: (${this.player.position.x.toFixed(2)}, ${this.player.position.y.toFixed(2)}, ${this.player.position.z.toFixed(2)})`);
+      console.log(`[Game] Camera position: (${this.player.camera.position.x.toFixed(2)}, ${this.player.camera.position.y.toFixed(2)}, ${this.player.camera.position.z.toFixed(2)})`);
+      
+      // Create an empty grid map for procedural dungeon (collision handled by RoomManager)
+      // This prevents the legacy grid-based collision check from blocking movement
+      const emptyGridSize = 100; // Large enough grid for procedural dungeon bounds
+      const emptyGrid = Array(emptyGridSize).fill(null).map(() => Array(emptyGridSize).fill(0));
+      this.player.setDungeonMapData(emptyGrid, emptyGridSize);
+      
+      // Connect player collision to RoomManager
+      this.player.setCollisionCallback((x, z, radius) => {
+        return this.roomManager.checkCollision(x, z, radius);
+      });
+
+      // Initialize effects manager
+      this.effectsManager = new EffectsManager(this.scene, this.player.camera, this.canvas);
+      console.log('Effects manager created');
+
+      // Initialize weapon sprite (first-person weapon display)
+      // Scale: 0.83 = ~150px height (original default)
+      // Viewmodel scale: 4.0 = weapon appears at 400% size on screen
+      this.weaponSprite = new WeaponSprite('pistol', 0.83, 4.0);
+      await this.weaponSprite.load();
+      document.body.appendChild(this.weaponSprite.canvas);
+      console.log('Weapon sprite created');
+
       // Connect player health to HUD
       this.player.setHealthChangeCallback((health, maxHealth) => {
         this.hudManager.updateHealth(health, maxHealth);
@@ -2748,6 +2824,73 @@ export class Game {
       this.player.setDoorCallback((targetScene: SceneType) => {
         this.transitionToScene(targetScene);
       });
+
+      // Initialize ammo display
+      this.updateAmmoDisplay();
+
+      // Initialize weapon display
+      this.updateWeaponDisplay(this.availableWeapons[this.currentWeaponIndex]);
+
+      // Initialize Weapon logic (Phase A): lightweight weapon instance that provides recoil and ammo hooks.
+      const weaponCfg = {
+        name: 'Pistol',
+        fireRate: 6, // 6 RPS
+        reloadTime: 0.7,
+        magazine: 6,
+        recoilPitch: 0.06, // radians
+        recoilYaw: 0.02,
+        damage: 25,
+        range: 50,
+      };
+
+      this.weaponInstance = new Weapon(weaponCfg);
+      this.weaponInstance.onAmmoChanged = (cur, max) => {
+        this.currentAmmo = cur;
+        this.maxAmmo = max;
+        this.updateAmmoDisplay();
+      };
+
+      // Expose a simple handler for existing mousedown wiring
+      (this as any).weapon = {
+        handleMouseDown: (e: MouseEvent) => {
+          const result = this.weaponInstance?.triggerFire(e.button === 0 ? 'left' : 'right');
+          if (!result) return;
+
+          // spawn projectile immediately using same logic as queueProjectile
+          const dir = new THREE.Vector3();
+          this.player.camera.getWorldDirection(dir);
+          if (dir.lengthSq() > 0) dir.normalize();
+
+          const spawn = new THREE.Vector3();
+          this.player.camera.getWorldPosition(spawn);
+          const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.player.camera.quaternion).normalize();
+          const handOffset = e.button === 0 ? -0.25 : 0.25;
+          spawn.addScaledVector(right, handOffset);
+          spawn.addScaledVector(dir, 0.35);
+          spawn.y -= 0.12;
+
+          // Apply recoil to player camera
+          this.player.addRecoil(result.recoil.pitch, result.recoil.yaw);
+
+          // Play weapon sprite fire
+          this.weaponSprite?.play('fire');
+
+          // Effects: muzzle fire / audio
+          this.effectsManager?.onShoot(spawn, 0xffcc44);
+
+          // Crosshair flash feedback
+          try {
+            const ch = document.getElementById('crosshair');
+            if (ch) {
+              ch.classList.add('flash');
+              setTimeout(() => ch.classList.remove('flash'), 120);
+            }
+          } catch {}
+
+          // Fire projectile
+          this.projectileManager.fire(spawn, dir, e.button === 0 ? 'left' : 'right', result.damage);
+        }
+      };
 
       console.log('Managers created');
 
@@ -2818,7 +2961,6 @@ export class Game {
     spawn.y -= 0.12;
 
     const damage = this.player.getAttack();
-    this.hudManager?.triggerCast(hand);
 
     if (delaySeconds <= 0) {
       this.projectileManager.fire(spawn, dir, hand, damage);
@@ -2835,6 +2977,80 @@ export class Game {
       if (shot.timeLeft > 0) continue;
       this.projectileManager.fire(shot.spawn, shot.dir, shot.hand, shot.damage);
       this.pendingProjectiles.splice(i, 1);
+    }
+  }
+
+  private startReload(): void {
+    // If a Weapon instance exists, delegate reload to it so its internal ammo matches UI
+    if (this.weaponInstance) {
+      if (this.weaponInstance.isReloading()) return;
+      this.isReloading = true;
+      this.weaponSprite?.play('reload');
+      this.weaponInstance.startReload().then(() => {
+        this.isReloading = false;
+        // `onAmmoChanged` from weaponInstance will update `currentAmmo` and UI
+      });
+      return;
+    }
+
+    // Legacy fallback: directly manipulate game-level ammo
+    this.isReloading = true;
+    this.weaponSprite?.play('reload');
+    // Reload duration matches animation (4 frames @ 6fps = 0.67s)
+    setTimeout(() => {
+      this.currentAmmo = this.maxAmmo;
+      this.updateAmmoDisplay();
+      this.isReloading = false;
+    }, 700);
+  }
+
+  private updateAmmoDisplay(): void {
+    const el = document.getElementById('ammo-display');
+    if (el) {
+      el.textContent = `${this.currentAmmo} / ${this.maxAmmo}`;
+      if (this.currentAmmo === 0) {
+        el.style.color = '#ff4444';
+      } else {
+        el.style.color = '#fff';
+      }
+    }
+  }
+
+  private switchWeapon(direction: number): void {
+    // Prevent switching during reload
+    if (this.isReloading) return;
+
+    // Update weapon index (cycle through available weapons)
+    this.currentWeaponIndex = (this.currentWeaponIndex + direction + this.availableWeapons.length) % this.availableWeapons.length;
+    const newWeaponType = this.availableWeapons[this.currentWeaponIndex];
+
+    // Dispose old weapon sprite
+    if (this.weaponSprite) {
+      this.weaponSprite.dispose();
+    }
+
+    // Create new weapon sprite
+    this.weaponSprite = new WeaponSprite(newWeaponType, 0.83, 4.0);
+    this.weaponSprite.load().then(() => {
+      document.body.appendChild(this.weaponSprite.canvas);
+      console.log(`Switched to ${newWeaponType}`);
+    });
+
+    // Update weapon display UI
+    this.updateWeaponDisplay(newWeaponType);
+
+    // Set cooldown to prevent rapid switching
+    this.weaponSwitchCooldown = 0.3;
+
+    // Reset ammo for now (in a full game, each weapon would have its own ammo pool)
+    this.currentAmmo = this.maxAmmo;
+    this.updateAmmoDisplay();
+  }
+
+  private updateWeaponDisplay(weaponName: string): void {
+    const el = document.getElementById('weapon-display');
+    if (el) {
+      el.textContent = weaponName.toUpperCase();
     }
   }
 
@@ -2860,6 +3076,19 @@ export class Game {
     }
 
     this.hudManager?.update(dt);
+    this.effectsManager?.update(dt);
+    this.weaponSprite?.update(dt);
+
+    // Update weapon switch cooldown
+    if (this.weaponSwitchCooldown > 0) {
+      this.weaponSwitchCooldown -= dt;
+    }
+
+    // Apply screen shake offset to camera
+    if (this.effectsManager?.shake.isActive()) {
+      const offset = this.effectsManager.shake.getOffset();
+      this.player.camera.position.add(offset);
+    }
 
     // Update sprint status indicator
     this.updateSprintStatus();
@@ -2885,12 +3114,13 @@ export class Game {
   }
 
   private spawnDungeonItemPickupsFromLayout(): void {
-    if (!this.itemPickupManager) return;
+    if (!this.itemPickupManager || !this.dungeonLevel) return;
 
     const worldSpawns = [];
+    const mapData = this.dungeonLevel.mapData;
 
     for (const entry of DUNGEON_PICKUP_LAYOUT) {
-      const row = DUNGEON_MAP[entry.gridZ];
+      const row = mapData[entry.gridZ];
       const cell = row?.[entry.gridX];
 
       if (cell === undefined) {
@@ -2971,6 +3201,8 @@ export class Game {
   }
 
   private spawnDungeonCoins(): void {
+    if (!this.dungeonLevel) return;
+    
     // Spawn coins at predefined grid positions (validated against walls).
     // NOTE: Coins spawned on the player start tile get instantly collected,
     // so we avoid (3,3) (player starts at 3.5,3.5).
@@ -2983,8 +3215,10 @@ export class Game {
     ];
 
     const coinPositions: Array<{ x: number; z: number }> = [];
+    const mapData = this.dungeonLevel.mapData;
+    
     for (const entry of coinGridPositions) {
-      const row = DUNGEON_MAP[entry.gridZ];
+      const row = mapData[entry.gridZ];
       const cell = row?.[entry.gridX];
       if (cell === undefined) {
         console.warn(`Coin spawn skipped at grid (${entry.gridX}, ${entry.gridZ}) - outside dungeon bounds`);
